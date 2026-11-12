@@ -8,6 +8,7 @@ export interface InstalledPlugin {
   version: string;
   scope: string;
   enabled: boolean;
+  installPath: string;
 }
 
 export interface PluginInventory {
@@ -18,6 +19,7 @@ export interface PluginInventory {
 interface InstallRecord {
   scope?: string;
   version?: string;
+  installPath?: string;
 }
 
 async function readJson(path: string, problems: string[]): Promise<unknown> {
@@ -56,6 +58,7 @@ export async function readPlugins(paths: ClaudePaths): Promise<PluginInventory> 
         version: record.version ?? 'unknown',
         scope: record.scope ?? 'user',
         enabled: enabled[id] === true,
+        installPath: record.installPath ?? '',
       });
     }
   }
