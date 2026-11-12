@@ -35,3 +35,20 @@ test('an empty folder detects nothing; a malformed package.json is a problem', a
   assert.equal(stack.problems.length, 1);
   assert.match(stack.problems[0]!, /package\.json/);
 });
+
+test('a Python repo: dependencies from pyproject.toml', async () => {
+  const stack = await detectStack(fixture('repo-python'));
+  assert.deepEqual(stack.languages, ['python']);
+  assert.deepEqual(stack.frameworks, ['fastapi', 'pytest', 'sqlalchemy']);
+  assert.equal(stack.evidence.fastapi, 'pyproject.toml');
+});
+
+test('a Python repo: requirements.txt and Poetry-style tables', async () => {
+  const dir = emptyDir();
+  writeFileSync(join(dir, 'requirements.txt'), '# web\nDjango==5.1 ; python_version >= "3.10"\n-r dev.txt\npandas\n');
+  writeFileSync(join(dir, 'pyproject.toml'), '[tool.poetry.dependencies]\npython = "^3.12"\nflask = "^3.0"\n');
+  const stack = await detectStack(dir);
+  assert.deepEqual(stack.languages, ['python']);
+  assert.deepEqual(stack.frameworks, ['django', 'flask', 'pandas']);
+  assert.equal(stack.evidence.django, 'requirements.txt');
+});

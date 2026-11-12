@@ -1,0 +1,9 @@
+[project]
+name = "api"
+dependencies = [
+  "fastapi[standard]>=0.115",
+  "SQLAlchemy~=2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]

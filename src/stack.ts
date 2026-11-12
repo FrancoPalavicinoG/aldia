@@ -1,4 +1,4 @@
-import { access } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { readJson } from './json.js';
 
@@ -32,6 +32,17 @@ const NODE_FRAMEWORKS: Record<string, string> = {
   '@playwright/test': 'playwright',
 };
 
+// Python distribution name (lowercase) → framework id.
+const PYTHON_FRAMEWORKS: Record<string, string> = {
+  django: 'django',
+  fastapi: 'fastapi',
+  flask: 'flask',
+  pytest: 'pytest',
+  pandas: 'pandas',
+  sqlalchemy: 'sqlalchemy',
+  streamlit: 'streamlit',
+};
+
 // Checked in order: the first lockfile found names the package manager.
 const NODE_LOCKFILES: [file: string, manager: string][] = [
   ['pnpm-lock.yaml', 'pnpm'],
@@ -40,6 +51,15 @@ const NODE_LOCKFILES: [file: string, manager: string][] = [
   ['bun.lockb', 'bun'],
   ['package-lock.json', 'npm'],
 ];
+
+async function readText(path: string): Promise<string | undefined> {
+  try {
+    return await readFile(path, 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw error;
+  }
+}
 
 async function exists(path: string): Promise<boolean> {
   try {
@@ -102,8 +122,45 @@ async function detectNode(root: string, profile: Profile): Promise<void> {
   }
 }
 
+const NAME = /^([A-Za-z0-9][A-Za-z0-9._-]*)/;
+
+// requirements.txt: one requirement per line, name first. Comments and pip options skipped.
+function requirementNames(text: string): string[] {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.replace(/#.*/, '').trim())
+    .filter((line) => line && !line.startsWith('-'))
+    .map((line) => NAME.exec(line)?.[1] ?? '');
+}
+
+// pyproject.toml without a TOML parser: names that open a quoted requirement
+// ("fastapi>=0.1", PEP 621) or a key line (flask = "^3.0", Poetry). Other strings and
+// keys it picks up, like the project name, simply match no framework.
+function pyprojectNames(text: string): string[] {
+  const quoted = [...text.matchAll(/["']([A-Za-z0-9][A-Za-z0-9._-]*)/g)].map((m) => m[1]!);
+  const keys = [...text.matchAll(/^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*=/gm)].map((m) => m[1]!);
+  return [...quoted, ...keys];
+}
+
+async function detectPython(root: string, profile: Profile): Promise<void> {
+  const sources: [file: string, names: (text: string) => string[]][] = [
+    ['pyproject.toml', pyprojectNames],
+    ['requirements.txt', requirementNames],
+  ];
+  for (const [file, names] of sources) {
+    const text = await readText(join(root, file));
+    if (text === undefined) continue;
+    profile.add('languages', 'python', file);
+    for (const name of names(text)) {
+      const id = PYTHON_FRAMEWORKS[name.toLowerCase().replace(/_/g, '-')];
+      if (id) profile.add('frameworks', id, file);
+    }
+  }
+}
+
 export async function detectStack(root: string): Promise<StackProfile> {
   const profile = new Profile();
   await detectNode(root, profile);
+  await detectPython(root, profile);
   return profile.result();
 }
