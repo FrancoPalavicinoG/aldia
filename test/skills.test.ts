@@ -31,3 +31,11 @@ test('folders without SKILL.md and hidden folders are not skills; an unreadable 
 test('a home without skills gives an empty inventory', async () => {
   assert.deepEqual(await readSkills(resolveClaudePaths({ HOME: emptyHome() })), { skills: [], problems: [] });
 });
+
+test('skills synced from claude.ai are listed as synced, and their folder is not a skill', async () => {
+  const { skills } = await readSkills(resolveClaudePaths({ HOME: fixture('home-basic') }));
+  assert.deepEqual(
+    skills.map((s) => [s.source, s.name]),
+    [['personal', 'reviewer'], ['synced', 'pdf-tools']],
+  );
+});
