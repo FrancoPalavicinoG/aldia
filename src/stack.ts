@@ -43,6 +43,27 @@ const PYTHON_FRAMEWORKS: Record<string, string> = {
   streamlit: 'streamlit',
 };
 
+// A manifest file that, on its own, tells the language.
+const LANGUAGE_FILES: [file: string, language: string][] = [
+  ['go.mod', 'go'],
+  ['Cargo.toml', 'rust'],
+  ['Gemfile', 'ruby'],
+  ['pom.xml', 'java'],
+  ['build.gradle', 'java'],
+  ['build.gradle.kts', 'java'],
+  ['composer.json', 'php'],
+];
+
+// A file or folder that tells a tool is in use.
+const TOOL_FILES: [path: string, tool: string][] = [
+  ['Dockerfile', 'docker'],
+  ['docker-compose.yml', 'docker'],
+  ['docker-compose.yaml', 'docker'],
+  ['compose.yml', 'docker'],
+  ['compose.yaml', 'docker'],
+  ['.github/workflows', 'github-actions'],
+];
+
 // Checked in order: the first lockfile found names the package manager.
 const NODE_LOCKFILES: [file: string, manager: string][] = [
   ['pnpm-lock.yaml', 'pnpm'],
@@ -158,9 +179,22 @@ async function detectPython(root: string, profile: Profile): Promise<void> {
   }
 }
 
+async function detectOthers(root: string, profile: Profile): Promise<void> {
+  for (const [file, language] of LANGUAGE_FILES) {
+    if (await exists(join(root, file))) profile.add('languages', language, file);
+  }
+  const gemfile = await readText(join(root, 'Gemfile'));
+  if (gemfile && /^\s*gem\s+["']rails["']/m.test(gemfile)) profile.add('frameworks', 'rails', 'Gemfile');
+
+  for (const [path, tool] of TOOL_FILES) {
+    if (await exists(join(root, path))) profile.add('tools', tool, path);
+  }
+}
+
 export async function detectStack(root: string): Promise<StackProfile> {
   const profile = new Profile();
   await detectNode(root, profile);
   await detectPython(root, profile);
+  await detectOthers(root, profile);
   return profile.result();
 }

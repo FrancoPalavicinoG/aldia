@@ -52,3 +52,24 @@ test('a Python repo: requirements.txt and Poetry-style tables', async () => {
   assert.deepEqual(stack.frameworks, ['django', 'flask', 'pandas']);
   assert.equal(stack.evidence.django, 'requirements.txt');
 });
+
+test('other languages and tools: Go, Docker and GitHub Actions together', async () => {
+  const stack = await detectStack(fixture('repo-polyglot'));
+  assert.deepEqual(stack.languages, ['go']);
+  assert.deepEqual(stack.tools, ['docker', 'github-actions']);
+  assert.equal(stack.evidence.docker, 'Dockerfile');
+  assert.equal(stack.evidence['github-actions'], '.github/workflows');
+});
+
+test('Rust, Ruby on Rails, Java and PHP are recognized by their manifests', async () => {
+  const dir = emptyDir();
+  writeFileSync(join(dir, 'Cargo.toml'), '[package]\nname = "cli"\n');
+  writeFileSync(join(dir, 'Gemfile'), "source 'https://rubygems.org'\ngem 'rails', '~> 8.0'\n");
+  writeFileSync(join(dir, 'build.gradle.kts'), 'plugins { java }\n');
+  writeFileSync(join(dir, 'composer.json'), '{}\n');
+  writeFileSync(join(dir, 'compose.yaml'), 'services: {}\n');
+  const stack = await detectStack(dir);
+  assert.deepEqual(stack.languages, ['java', 'php', 'ruby', 'rust']);
+  assert.deepEqual(stack.frameworks, ['rails']);
+  assert.deepEqual(stack.tools, ['docker']);
+});
