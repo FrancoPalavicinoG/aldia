@@ -51,8 +51,22 @@ Nombres en inglés; Claude responde en el idioma del usuario.
 - Sin dependencias en runtime.
 
 ## Stack
-- TypeScript 7 compilado con `tsc` a `dist/`. Node ≥ 22.
-- `npm test`: compila y corre `node --test`.
+- TypeScript 7. Node ≥ 22. Sin dependencias en runtime.
+- `npm run build`: compila `src/` a `plugin/lib/` (se commitea; la CI falla si no coincide).
+- `npm test`: build + compila `src/` y `test/` a `dist/` + `node --test`.
+
+## Estructura
+- `src/`: código TypeScript. `src/cli.ts` es lo que ejecuta la skill.
+- `plugin/`: lo único que se instala. Manifest, `skills/aldia/SKILL.md` y `lib/` compilado.
+  Sin `package.json` + lockfile en su raíz, para que Claude Code no ejecute `npm install`.
+- `.claude-plugin/marketplace.json`: el repo es su propio marketplace (`source: ./plugin`).
+
+## Probar el plugin local
+```bash
+claude plugin marketplace add /ruta/a/aldia
+claude plugin install aldia@aldia
+```
+Corre desde la carpeta local: tras `npm run build`, los cambios se ven en la siguiente sesión.
 
 ## Tests
 - Se testea el comportamiento, con fixtures (`test/fixtures/`). Una función suelta
