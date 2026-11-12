@@ -4,6 +4,7 @@ import { join } from 'node:path';
 export interface ClaudePaths {
   settings: string;
   installedPlugins: string;
+  skillsDir: string;
 }
 
 // Claude Code moves its config with CLAUDE_CONFIG_DIR, and the plugins folder alone
@@ -14,5 +15,6 @@ export function resolveClaudePaths(env: NodeJS.ProcessEnv = process.env): Claude
   return {
     settings: join(configDir, 'settings.json'),
     installedPlugins: join(pluginsDir, 'installed_plugins.json'),
+    skillsDir: join(configDir, 'skills'),
   };
 }
