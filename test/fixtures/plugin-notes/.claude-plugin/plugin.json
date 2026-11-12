@@ -1,0 +1,4 @@
+{
+  "name": "notes",
+  "mcpServers": "./servers/calendar.json"
+}
