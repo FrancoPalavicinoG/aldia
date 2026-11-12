@@ -1,0 +1,20 @@
+{
+  "numStartups": 12,
+  "mcpServers": {
+    "docs-search": {
+      "type": "http",
+      "url": "https://docs.example.com/mcp?token=FAKE-SECRET-QUERY",
+      "headers": { "Authorization": "Bearer FAKE-SECRET-HEADER" }
+    },
+    "local-db": {
+      "command": "/usr/local/bin/db-mcp",
+      "args": ["--password", "FAKE-SECRET-ARG"],
+      "env": { "API_KEY": "FAKE-SECRET-ENV" }
+    }
+  },
+  "projects": {
+    "/work/some-repo": {
+      "mcpServers": { "project-only": { "type": "http", "url": "https://project.example.com" } }
+    }
+  }
+}
