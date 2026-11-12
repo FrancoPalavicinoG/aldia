@@ -1,10 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveClaudePaths } from '../src/paths.js';
+import { readPlugins } from '../src/plugins.js';
 import { readSkills } from '../src/skills.js';
 
 const fixture = (name: string) => fileURLToPath(new URL(`../../test/fixtures/${name}`, import.meta.url));
@@ -37,5 +38,30 @@ test('skills synced from claude.ai are listed as synced, and their folder is not
   assert.deepEqual(
     skills.map((s) => [s.source, s.name]),
     [['personal', 'reviewer'], ['synced', 'pdf-tools']],
+  );
+});
+
+test('skills from installed plugins carry the plugin id, once per install folder', async () => {
+  const home = emptyHome();
+  const installPath = fixture('plugin-design-kit');
+  mkdirSync(join(home, '.claude', 'plugins'), { recursive: true });
+  writeFileSync(
+    join(home, '.claude', 'plugins', 'installed_plugins.json'),
+    JSON.stringify({
+      version: 2,
+      plugins: {
+        'design-kit@community': [
+          { scope: 'user', installPath, version: '0.3.1' },
+          { scope: 'project', installPath, version: '0.3.1' },
+        ],
+      },
+    }),
+  );
+  const paths = resolveClaudePaths({ HOME: home });
+  const { plugins } = await readPlugins(paths);
+  const { skills } = await readSkills(paths, plugins);
+  assert.deepEqual(
+    skills.map((s) => [s.source, s.name, s.pluginId]),
+    [['plugin', 'palette', 'design-kit@community']],
   );
 });

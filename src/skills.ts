@@ -2,13 +2,15 @@ import { readdir, readFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { parseFrontmatter } from './frontmatter.js';
 import type { ClaudePaths } from './paths.js';
+import type { InstalledPlugin } from './plugins.js';
 
-export type SkillSource = 'personal' | 'synced';
+export type SkillSource = 'personal' | 'synced' | 'plugin';
 
 export interface Skill {
   name: string;
   description: string;
   source: SkillSource;
+  pluginId?: string;
   path: string;
 }
 
@@ -47,13 +49,22 @@ async function scanSkills(dir: string, source: SkillSource, problems: string[], 
   return skills;
 }
 
-export async function readSkills(paths: ClaudePaths): Promise<SkillInventory> {
+export async function readSkills(paths: ClaudePaths, plugins: InstalledPlugin[] = []): Promise<SkillInventory> {
   const problems: string[] = [];
   const syncedDir = join(paths.skillsDir, 'synced');
   const skills = await scanSkills(paths.skillsDir, 'personal', problems, ['synced']);
   // claude.ai keeps synced skills one level deeper, in one folder per sync bucket.
   for (const bucket of await subfolders(syncedDir)) {
     skills.push(...(await scanSkills(bucket, 'synced', problems)));
+  }
+  // A plugin installed in several scopes can share one install folder: read it once.
+  const seen = new Set<string>();
+  for (const plugin of plugins) {
+    if (!plugin.installPath || seen.has(plugin.installPath)) continue;
+    seen.add(plugin.installPath);
+    for (const skill of await scanSkills(join(plugin.installPath, 'skills'), 'plugin', problems)) {
+      skills.push({ ...skill, pluginId: plugin.id });
+    }
   }
   skills.sort((a, b) => a.source.localeCompare(b.source) || a.name.localeCompare(b.name));
   return { skills, problems };
