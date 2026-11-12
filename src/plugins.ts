@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readJson } from './json.js';
 import type { ClaudePaths } from './paths.js';
 
 export interface InstalledPlugin {
@@ -20,22 +20,6 @@ interface InstallRecord {
   scope?: string;
   version?: string;
   installPath?: string;
-}
-
-async function readJson(path: string, problems: string[]): Promise<unknown> {
-  let text: string;
-  try {
-    text = await readFile(path, 'utf8');
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
-    throw error;
-  }
-  try {
-    return JSON.parse(text);
-  } catch {
-    problems.push(`${path}: not valid JSON`);
-    return undefined;
-  }
 }
 
 function splitId(id: string): { name: string; marketplace: string } {

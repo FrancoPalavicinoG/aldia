@@ -1,0 +1,4 @@
+{
+  "figma": { "type": "http", "url": "https://figma.example.com/mcp", "headers": { "Authorization": "Bearer FAKE-SECRET-PLUGIN" } },
+  "icons": { "type": "http", "url": "https://icons.example.com/mcp" }
+}

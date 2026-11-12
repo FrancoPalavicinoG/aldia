@@ -1,0 +1,4 @@
+{
+  "name": "design-kit",
+  "mcpServers": { "figma": { "command": "figma-local" } }
+}
