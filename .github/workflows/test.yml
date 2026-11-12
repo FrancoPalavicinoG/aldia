@@ -28,3 +28,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      - name: Compiled plugin matches src/
+        shell: bash
+        run: |
+          if [ -n "$(git status --porcelain -- plugin/lib)" ]; then
+            git status --short -- plugin/lib
+            echo "plugin/lib is out of date: run npm run build and commit the result."
+            exit 1
+          fi

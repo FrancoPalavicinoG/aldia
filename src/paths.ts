@@ -2,6 +2,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 export interface ClaudePaths {
+  home: string;
   settings: string;
   installedPlugins: string;
   skillsDir: string;
@@ -16,6 +17,7 @@ export function resolveClaudePaths(env: NodeJS.ProcessEnv = process.env): Claude
   const configDir = env.CLAUDE_CONFIG_DIR || join(home, '.claude');
   const pluginsDir = env.CLAUDE_CODE_PLUGIN_CACHE_DIR || join(configDir, 'plugins');
   return {
+    home,
     settings: join(configDir, 'settings.json'),
     installedPlugins: join(pluginsDir, 'installed_plugins.json'),
     skillsDir: join(configDir, 'skills'),

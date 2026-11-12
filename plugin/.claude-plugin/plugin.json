@@ -1,0 +1,12 @@
+{
+  "name": "aldia",
+  "version": "0.1.0",
+  "description": "Keeps your Claude Code setup up to date and lean: shows what you have installed, and later recommends and cleans up.",
+  "author": {
+    "name": "Franco Palavicino",
+    "url": "https://github.com/FrancoPalavicinoG"
+  },
+  "homepage": "https://github.com/FrancoPalavicinoG/aldia",
+  "repository": "https://github.com/FrancoPalavicinoG/aldia",
+  "license": "MIT"
+}
