@@ -1,0 +1,18 @@
+{
+  "name": "aldia",
+  "owner": {
+    "name": "Franco Palavicino",
+    "url": "https://github.com/FrancoPalavicinoG"
+  },
+  "metadata": {
+    "description": "aldia: keeps your Claude Code setup up to date and lean."
+  },
+  "plugins": [
+    {
+      "name": "aldia",
+      "source": "./plugin",
+      "description": "Shows your Claude Code setup: plugins, skills and MCP servers.",
+      "category": "productivity"
+    }
+  ]
+}
