@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -25,4 +25,17 @@ test('lists installed plugins with their enabled state', async () => {
 test('a home without Claude Code config gives an empty inventory', async () => {
   const inventory = await readPlugins(resolveClaudePaths({ HOME: emptyHome() }));
   assert.deepEqual(inventory, { plugins: [], problems: [] });
+});
+
+test('a malformed config file is reported as a problem instead of crashing', async () => {
+  const home = emptyHome();
+  mkdirSync(join(home, '.claude', 'plugins'), { recursive: true });
+  writeFileSync(join(home, '.claude', 'settings.json'), '{ "enabledPlugins": ');
+  writeFileSync(join(home, '.claude', 'plugins', 'installed_plugins.json'), '{"version": 2, "plugins": {"a@m": [{"version": "1.0.0"}]}}');
+
+  const { plugins, problems } = await readPlugins(resolveClaudePaths({ HOME: home }));
+
+  assert.deepEqual(plugins.map((p) => [p.id, p.enabled]), [['a@m', false]]);
+  assert.equal(problems.length, 1);
+  assert.match(problems[0]!, /settings\.json/);
 });

@@ -20,12 +20,19 @@ interface InstallRecord {
   version?: string;
 }
 
-async function readJson(path: string): Promise<unknown> {
+async function readJson(path: string, problems: string[]): Promise<unknown> {
+  let text: string;
   try {
-    return JSON.parse(await readFile(path, 'utf8'));
+    text = await readFile(path, 'utf8');
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw error;
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    problems.push(`${path}: not valid JSON`);
+    return undefined;
   }
 }
 
@@ -35,8 +42,9 @@ function splitId(id: string): { name: string; marketplace: string } {
 }
 
 export async function readPlugins(paths: ClaudePaths): Promise<PluginInventory> {
-  const installed = (await readJson(paths.installedPlugins)) as { plugins?: Record<string, InstallRecord[]> } | undefined;
-  const settings = (await readJson(paths.settings)) as { enabledPlugins?: Record<string, boolean> } | undefined;
+  const problems: string[] = [];
+  const installed = (await readJson(paths.installedPlugins, problems)) as { plugins?: Record<string, InstallRecord[]> } | undefined;
+  const settings = (await readJson(paths.settings, problems)) as { enabledPlugins?: Record<string, boolean> } | undefined;
   const enabled = settings?.enabledPlugins ?? {};
 
   const plugins: InstalledPlugin[] = [];
@@ -52,5 +60,5 @@ export async function readPlugins(paths: ClaudePaths): Promise<PluginInventory> 
     }
   }
   plugins.sort((a, b) => a.id.localeCompare(b.id));
-  return { plugins, problems: [] };
+  return { plugins, problems };
 }
