@@ -39,3 +39,15 @@ test('a malformed config file is reported as a problem instead of crashing', asy
   assert.equal(problems.length, 1);
   assert.match(problems[0]!, /settings\.json/);
 });
+
+test('CLAUDE_CONFIG_DIR moves where the config is read from', async () => {
+  const env = { HOME: emptyHome(), CLAUDE_CONFIG_DIR: join(fixture('home-basic'), '.claude') };
+  const { plugins } = await readPlugins(resolveClaudePaths(env));
+  assert.deepEqual(plugins.map((p) => p.id), ['code-review@official', 'design-kit@community']);
+});
+
+test('CLAUDE_CODE_PLUGIN_CACHE_DIR moves only the plugins folder', async () => {
+  const env = { HOME: fixture('home-basic'), CLAUDE_CODE_PLUGIN_CACHE_DIR: emptyHome() };
+  const { plugins } = await readPlugins(resolveClaudePaths(env));
+  assert.deepEqual(plugins, []);
+});
