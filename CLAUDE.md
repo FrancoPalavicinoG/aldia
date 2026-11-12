@@ -51,11 +51,17 @@ Nombres en inglés; Claude responde en el idioma del usuario.
 - Sin dependencias en runtime.
 
 ## Stack
-- TypeScript compilado con `tsc`. Node ≥ 20.
-- Tests con `node --test`. Nunca tocan el `~/.claude` real: usan un HOME temporal.
+- TypeScript 7 compilado con `tsc` a `dist/`. Node ≥ 22.
+- `npm test`: compila y corre `node --test`.
+
+## Tests
+- Se testea el comportamiento, con fixtures (`test/fixtures/`). Una función suelta
+  lleva test propio solo si tiene lógica con casos borde.
+- Lo trivial (rutas, tipos, config) se prueba a través de lo que lo usa.
+- Test primero: falla, luego el código mínimo que lo hace pasar.
+- Nunca tocan el `~/.claude` real: usan un HOME temporal o un fixture.
 
 ## Convenciones
 - Docs en español; código e identificadores en inglés.
 - Commits en inglés, breves, Conventional Commits: feat, fix, docs, refactor, test, chore, ci.
 - Ramas: `<tipo>/<descripcion-corta>` (ej. `feat/plugin-reader`).
-- Cada módulo nace con su test, en el mismo commit.

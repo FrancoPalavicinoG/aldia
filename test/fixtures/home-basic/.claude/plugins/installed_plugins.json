@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "plugins": {
+    "code-review@official": [
+      {
+        "scope": "user",
+        "installPath": "/fake/cache/official/code-review/1.2.0",
+        "version": "1.2.0",
+        "installedAt": "2026-10-01T10:00:00.000Z",
+        "lastUpdated": "2026-10-01T10:00:00.000Z"
+      }
+    ],
+    "design-kit@community": [
+      {
+        "scope": "user",
+        "installPath": "/fake/cache/community/design-kit/0.3.1",
+        "version": "0.3.1",
+        "installedAt": "2026-10-02T10:00:00.000Z",
+        "lastUpdated": "2026-10-02T10:00:00.000Z"
+      }
+    ]
+  }
+}
