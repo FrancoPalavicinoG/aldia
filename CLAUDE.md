@@ -26,11 +26,16 @@ Local (el plugin):
 - Nivel 2: topics de GitHub (claude-code-plugin, claude-skills, mcp-server),
   listas awesome-claude-code, Hacker News, r/ClaudeAI.
 
-## Flujos
-- `/aldia init`: inventario del entorno + primera limpieza.
+## Comandos
+Nombres en inglés; Claude responde en el idioma del usuario.
+- `/aldia`: estado (inventario breve + recomendaciones pendientes).
+- `/aldia init`: primer escaneo del entorno + primera propuesta de limpieza.
+- `/aldia clean`: propone qué quitar, en un solo bloque Sí/No.
+- `/aldia undo`: restaura el último respaldo.
+- `/aldia update`: fuerza la descarga del catálogo.
+- `/aldia <texto libre>`: recomendaciones para esa intención.
+- Opciones: `--dry-run` (solo reporte), `--global` / `--project` (alcance), `--all` (sin tope).
 - Aviso al abrir sesión: 1 línea visible, máx. 1/día, solo si hay algo relevante.
-- `/aldia [intención]`: recomendaciones para la tarea actual.
-- `/aldia limpiar`: propuesta de limpieza en un solo bloque Sí/No.
 
 ## Reglas de notificación
 - Nunca interrumpir: preguntar solo en /aldia, en un proyecto nuevo o ante una alerta crítica.
