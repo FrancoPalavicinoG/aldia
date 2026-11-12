@@ -68,3 +68,10 @@ test('MCP servers bundled with plugins: .mcp.json in both shapes, and the manife
   );
   assert.ok(!JSON.stringify(result).includes('FAKE-SECRET-PLUGIN'));
 });
+
+test('CLAUDE_CONFIG_DIR moves the global state file into that folder', async () => {
+  const configDir = emptyHome();
+  writeFileSync(join(configDir, '.claude.json'), JSON.stringify({ mcpServers: { moved: { type: 'http', url: 'https://moved.example.com' } } }));
+  const { servers } = await readMcpServers(resolveClaudePaths({ HOME: fixture('home-basic'), CLAUDE_CONFIG_DIR: configDir }));
+  assert.deepEqual(servers.map((s) => s.name), ['moved']);
+});

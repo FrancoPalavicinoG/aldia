@@ -8,8 +8,9 @@ export interface ClaudePaths {
   globalState: string;
 }
 
-// Claude Code moves its config with CLAUDE_CONFIG_DIR, and the plugins folder alone
-// with CLAUDE_CODE_PLUGIN_CACHE_DIR (https://code.claude.com/docs/en/plugins/loading).
+// Claude Code moves its config with CLAUDE_CONFIG_DIR, .claude.json included, and the
+// plugins folder alone with CLAUDE_CODE_PLUGIN_CACHE_DIR
+// (https://code.claude.com/docs/en/claude-directory, .../plugins/loading).
 export function resolveClaudePaths(env: NodeJS.ProcessEnv = process.env): ClaudePaths {
   const home = env.HOME || homedir();
   const configDir = env.CLAUDE_CONFIG_DIR || join(home, '.claude');
@@ -18,6 +19,6 @@ export function resolveClaudePaths(env: NodeJS.ProcessEnv = process.env): Claude
     settings: join(configDir, 'settings.json'),
     installedPlugins: join(pluginsDir, 'installed_plugins.json'),
     skillsDir: join(configDir, 'skills'),
-    globalState: join(home, '.claude.json'),
+    globalState: env.CLAUDE_CONFIG_DIR ? join(env.CLAUDE_CONFIG_DIR, '.claude.json') : join(home, '.claude.json'),
   };
 }
