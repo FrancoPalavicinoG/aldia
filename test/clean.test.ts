@@ -179,6 +179,8 @@ test('a big setup gives a short report: the top items, a count of the rest, and 
   assert.match(report, /- \.\.\.and \d+ more/);
   assert.match(report, /- skill skill-\d+ \(personal\): ~\d+ tokens/);
   assert.match(report, /would save ~[\d,]+ tokens on every request/);
+  // MCP costs depend on what the session loaded, which changes with where Claude Code runs.
+  assert.match(report, /MCP costs measured in your latest session \(\d{4}-\d{2}-\d{2}\); they change with where you open Claude Code/);
 });
 
 test('when there is little to save, the report says so in one line instead of a list', async () => {

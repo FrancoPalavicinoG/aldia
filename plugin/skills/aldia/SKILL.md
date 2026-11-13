@@ -16,7 +16,7 @@ The user ran /aldia with these arguments: $ARGUMENTS
 
 Run exactly `node ${CLAUDE_PLUGIN_ROOT}/lib/cli.js clean` (no other arguments) and present its report instead of the setup below, in the user's language, briefly:
 
-- Lead with the possible saving per request, and say it is an estimate.
+- Lead with the possible saving per request, and say it is an estimate. Say that MCP costs come from the latest session and change with where Claude Code is opened.
 - Group the proposals as the report does; keep the counts of what is not listed.
 - For claude.ai connectors, say they are only turned off in Claude Code and stay in the user's account.
 - Say that nothing was changed: this version of aldia only proposes. Don't offer to apply anything.

@@ -218,10 +218,12 @@ export async function cleanReport(paths: ClaudePaths, root?: string, { now = new
     lines.push(`Your setup is already lean: turning off what you haven't used in ${TURN_OFF_DAYS} days would save only ~${thousands(plan.savings)} tokens per request.`);
   } else {
     const of = (...actions: CleanAction[]) => plan.proposals.filter((p) => actions.includes(p.action));
-    const measured = cost.measuredAt ? `; MCP sizes from the session of ${day(cost.measuredAt)}` : '';
     lines.push(
       `Turning off what you haven't used in ${TURN_OFF_DAYS} days would save ~${thousands(plan.savings)} tokens on every request.`,
-      `Estimate: tokens ~ characters / 4, skill text before Claude Code's listing budget. Usage from ${usage.sessions} sessions since ${day(usage.since)}${measured}.`,
+      `Estimate: tokens ~ characters / 4, skill text before Claude Code's listing budget. Usage from ${usage.sessions} sessions since ${day(usage.since)}.`,
+      ...(cost.measuredAt
+        ? [`MCP costs measured in your latest session (${day(cost.measuredAt)}); they change with where you open Claude Code (terminal, app, IDE), since each loads different servers.`]
+        : []),
       '',
       ...proposalLines('Turn off', of('disable-plugin', 'skill-off', 'disable-mcp')),
       ...proposalLines('claude.ai connectors: turn off in Claude Code only, they stay in your account', of('disable-connector')),

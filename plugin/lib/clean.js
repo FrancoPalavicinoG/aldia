@@ -144,8 +144,9 @@ export async function cleanReport(paths, root, { now = new Date() } = {}) {
     }
     else {
         const of = (...actions) => plan.proposals.filter((p) => actions.includes(p.action));
-        const measured = cost.measuredAt ? `; MCP sizes from the session of ${day(cost.measuredAt)}` : '';
-        lines.push(`Turning off what you haven't used in ${TURN_OFF_DAYS} days would save ~${thousands(plan.savings)} tokens on every request.`, `Estimate: tokens ~ characters / 4, skill text before Claude Code's listing budget. Usage from ${usage.sessions} sessions since ${day(usage.since)}${measured}.`, '', ...proposalLines('Turn off', of('disable-plugin', 'skill-off', 'disable-mcp')), ...proposalLines('claude.ai connectors: turn off in Claude Code only, they stay in your account', of('disable-connector')), ...proposalLines(`Uninstall: already off and unused for ${REMOVE_DAYS} days`, of('uninstall-plugin')));
+        lines.push(`Turning off what you haven't used in ${TURN_OFF_DAYS} days would save ~${thousands(plan.savings)} tokens on every request.`, `Estimate: tokens ~ characters / 4, skill text before Claude Code's listing budget. Usage from ${usage.sessions} sessions since ${day(usage.since)}.`, ...(cost.measuredAt
+            ? [`MCP costs measured in your latest session (${day(cost.measuredAt)}); they change with where you open Claude Code (terminal, app, IDE), since each loads different servers.`]
+            : []), '', ...proposalLines('Turn off', of('disable-plugin', 'skill-off', 'disable-mcp')), ...proposalLines('claude.ai connectors: turn off in Claude Code only, they stay in your account', of('disable-connector')), ...proposalLines(`Uninstall: already off and unused for ${REMOVE_DAYS} days`, of('uninstall-plugin')));
     }
     if (problems.length)
         lines.push('', `## Problems (${problems.length})`, ...problems.slice(0, MAX_LINES).map((p) => `- ${p}`));
