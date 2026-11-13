@@ -124,3 +124,13 @@ test('a huge repo stops at 500 folders and says so', async () => {
   assert.equal(stack.problems.length, 1);
   assert.match(stack.problems[0]!, /500 folders/);
 });
+
+test('test fixtures are sample projects, not the repo stack', async () => {
+  const dir = emptyDir();
+  writeAt(dir, 'test/fixtures/app/package.json', vue);
+  writeAt(dir, 'src/__fixtures__/package.json', vue);
+  writeAt(dir, 'pkg/testdata/go.mod', 'module sample\n');
+  const stack = await detectStack(dir);
+  assert.deepEqual(stack.languages, []);
+  assert.deepEqual(stack.frameworks, []);
+});

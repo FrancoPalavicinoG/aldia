@@ -172,9 +172,12 @@ async function detectOthers(folder, profile) {
             profile.add('tools', tool, at(folder, path));
     }
 }
-// Dependencies, build output and caches: their manifests are not the user's project.
-// Hidden folders (.git, .next, .venv...) are skipped too.
-const SKIPPED_FOLDERS = new Set(['node_modules', 'dist', 'build', 'out', 'target', 'vendor', 'venv', '__pycache__', 'coverage']);
+// Dependencies, build output, caches and test fixtures: their manifests are not the
+// user's project. Hidden folders (.git, .next, .venv...) are skipped too.
+const SKIPPED_FOLDERS = new Set([
+    'node_modules', 'dist', 'build', 'out', 'target', 'vendor', 'venv', '__pycache__', 'coverage',
+    'fixtures', '__fixtures__', 'testdata',
+]);
 const MAX_DEPTH = 3;
 const MAX_FOLDERS = 500;
 // The root and the folders below it, root first (breadth-first). Only folder names are

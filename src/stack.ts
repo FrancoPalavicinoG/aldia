@@ -202,9 +202,12 @@ async function detectOthers(folder: Folder, profile: Profile): Promise<void> {
   }
 }
 
-// Dependencies, build output and caches: their manifests are not the user's project.
-// Hidden folders (.git, .next, .venv...) are skipped too.
-const SKIPPED_FOLDERS = new Set(['node_modules', 'dist', 'build', 'out', 'target', 'vendor', 'venv', '__pycache__', 'coverage']);
+// Dependencies, build output, caches and test fixtures: their manifests are not the
+// user's project. Hidden folders (.git, .next, .venv...) are skipped too.
+const SKIPPED_FOLDERS = new Set([
+  'node_modules', 'dist', 'build', 'out', 'target', 'vendor', 'venv', '__pycache__', 'coverage',
+  'fixtures', '__fixtures__', 'testdata',
+]);
 const MAX_DEPTH = 3;
 const MAX_FOLDERS = 500;
 
