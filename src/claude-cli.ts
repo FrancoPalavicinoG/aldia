@@ -1,3 +1,8 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const run = promisify(execFile);
+
 // Changes to plugins and MCP servers go through Claude Code's own CLI, which knows its
 // files (installed_plugins.json, the plugin cache, ~/.claude.json). Only the operations
 // listed here can run, each built from a fixed list of arguments.
@@ -31,5 +36,65 @@ export function commandFor(op: Operation): string[] {
     case 'remove-mcp':
       check(SERVER.test(op.server), `not an MCP server name: ${JSON.stringify(op.server)}`);
       return ['mcp', 'remove', op.server, '--scope', op.scope];
+  }
+}
+
+export interface RunOptions {
+  // The project folder: required for local scope, which belongs to it.
+  cwd?: string;
+  env?: NodeJS.ProcessEnv;
+  // How to start the CLI; tests point it at a stand-in.
+  claude?: string[];
+  timeout?: number;
+}
+
+export interface RunResult {
+  ok: boolean;
+  problem?: string;
+}
+
+// The --json result line the plugin commands print on stdout.
+interface CliResult {
+  failureCode?: unknown;
+  alreadyInGoalState?: unknown;
+}
+
+function cliResult(stdout: string): CliResult | undefined {
+  for (const line of stdout.split('\n')) {
+    if (!line.startsWith('{')) continue;
+    try {
+      return JSON.parse(line) as CliResult;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+// Runs one operation with no shell: the arguments reach the CLI as they are, so no name
+// can become part of a command. Of what the CLI prints only its failure code is kept: its
+// messages can carry paths or values.
+export async function runOperation(op: Operation, options: RunOptions = {}): Promise<RunResult> {
+  const args = commandFor(op);
+  check(op.scope !== 'local' || !!options.cwd, 'local scope needs the project folder');
+  const [bin = 'claude', ...prefix] = options.claude ?? ['claude'];
+  const what = `claude ${args.slice(0, 3).join(' ')}`;
+  try {
+    await run(bin, [...prefix, ...args], {
+      ...(options.cwd ? { cwd: options.cwd } : {}),
+      env: options.env ?? process.env,
+      timeout: options.timeout ?? 60_000,
+      encoding: 'utf8',
+    });
+    return { ok: true };
+  } catch (error) {
+    const failure = error as NodeJS.ErrnoException & { stdout?: string; killed?: boolean; code?: string | number };
+    if (failure.code === 'ENOENT') return { ok: false, problem: 'claude could not be run (not installed or not on PATH)' };
+    if (failure.killed) return { ok: false, problem: `${what} timed out` };
+    const result = cliResult(failure.stdout ?? '');
+    // Already disabled or already gone: the goal is met.
+    if (result?.alreadyInGoalState === true) return { ok: true };
+    const code = typeof result?.failureCode === 'string' && /^[a-z_]+$/.test(result.failureCode) ? result.failureCode : undefined;
+    return { ok: false, problem: code ? `${what} failed: ${code}` : `${what} failed (exit ${failure.code ?? '?'})` };
   }
 }
