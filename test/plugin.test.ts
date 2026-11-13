@@ -64,5 +64,5 @@ test('the compiled command prints the clean proposal', () => {
     env: { HOME: home, USERPROFILE: home },
     encoding: 'utf8',
   });
-  assert.match(output, /^# aldia clean/);
+  assert.match(output, /^aldia clean/);
 });

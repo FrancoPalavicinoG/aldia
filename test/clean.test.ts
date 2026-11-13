@@ -174,18 +174,18 @@ test('a big setup gives a short report: the top items, a count of the rest, and 
   );
 
   const report = await cleanReport(resolveClaudePaths({ HOME: home }), undefined, { now });
-  assert.ok(report.length <= 4000, `report is ${report.length} characters`);
-  assert.match(report, /^# aldia clean \(dry run: nothing was changed\)/);
-  assert.match(report, /- \.\.\.and \d+ more/);
-  assert.match(report, /- skill skill-\d+ \(personal\): ~\d+ tokens/);
-  assert.match(report, /would save ~[\d,]+ tokens on every request/);
+  assert.ok(report.length <= 1500, `report is ${report.length} characters`);
+  assert.match(report, /^aldia clean · dry run, nothing changed\n/);
+  assert.match(report, /^saving ~[\d,]+ tok\/request/m);
   // MCP costs depend on what the session loaded, which changes with where Claude Code runs.
-  assert.match(report, /MCP costs measured in your latest session \(\d{4}-\d{2}-\d{2}\); they change with where you open Claude Code/);
+  assert.match(report, /MCP: latest session \d{4}-\d{2}-\d{2}, varies by where Claude Code runs/);
+  // One line per group: the biggest items, then a count of the rest.
+  assert.match(report, /^turn off \(\d+, ~[\d,]+\): skill-\d+ \[personal\] \d+, .*, \+\d+ more \(~[\d,]+\)$/m);
 });
 
 test('when there is little to save, the report says so in one line instead of a list', async () => {
   const home = fileURLToPath(new URL('../../test/fixtures/home-basic', import.meta.url));
   const report = await cleanReport(resolveClaudePaths({ HOME: home }), undefined, { now });
-  assert.match(report, /already lean: .* ~\d+ tokens per request/);
-  assert.ok(!report.includes('## Turn off'), report);
+  assert.match(report, /^already lean: only ~\d+ tok\/request to save$/m);
+  assert.ok(!report.includes('turn off'), report);
 });
