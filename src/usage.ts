@@ -1,5 +1,5 @@
 import { createReadStream } from 'node:fs';
-import { readdir } from 'node:fs/promises';
+import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import type { ClaudePaths } from './paths.js';
@@ -10,38 +10,58 @@ export interface UseCount {
   lastUsed: string;
 }
 
-// What the user actually used, read from Claude Code's session history. Names are as
-// the history writes them: skills as "plugin:skill" or "skill", MCP servers by the name
-// in their tool names (mcp__<server>__<tool>).
+// What the user actually used in the last days, read from Claude Code's session
+// history. Names are as the history writes them: skills as "plugin:skill" or "skill",
+// MCP servers by the name in their tool names (mcp__<server>__<tool>), commands as typed.
 export interface Usage {
+  // Start of the window, ISO.
+  since: string;
   sessions: number;
   skills: Record<string, UseCount>;
   mcpServers: Record<string, UseCount>;
+  commands: Record<string, UseCount>;
   problems: string[];
 }
 
+export interface UsageOptions {
+  now?: Date;
+  days?: number;
+}
+
 interface Entry {
+  type?: unknown;
   timestamp?: unknown;
   message?: { content?: unknown };
 }
 
+type Counts = Record<'skills' | 'mcpServers' | 'commands', Map<string, UseCount>>;
+
+// The command the user typed is recorded as <command-name>/name</command-name> in their
+// message, followed by its arguments, which are not read.
+const COMMAND = /<command-name>(\/[^<\s]{1,100})<\/command-name>/;
+
 // Session files hold everything: prompts, code, command output, maybe secrets. Only tool
-// names, the skill name of a Skill call and the timestamp are taken. A line that can't
-// hold a tool call is skipped without parsing, and a line that isn't valid JSON (a
-// session still being written) is ignored.
-async function scanSession(path: string, counts: { skills: Map<string, UseCount>; mcpServers: Map<string, UseCount> }) {
+// names, the skill name of a Skill call, the command name and the timestamp are taken.
+// A line that can't hold either is skipped without parsing, a line that isn't valid JSON
+// (a session still being written) is ignored, and so is anything before `since`.
+async function scanSession(path: string, since: string, counts: Counts) {
   const lines = createInterface({ input: createReadStream(path, 'utf8'), crlfDelay: Infinity });
   for await (const line of lines) {
-    if (!line.includes('"tool_use"')) continue;
+    if (!line.includes('"tool_use"') && !line.includes('<command-name>')) continue;
     let entry: Entry;
     try {
       entry = JSON.parse(line) as Entry;
     } catch {
       continue;
     }
-    const content = entry.message?.content;
-    if (!Array.isArray(content)) continue;
     const when = typeof entry.timestamp === 'string' ? entry.timestamp : '';
+    if (when < since) continue;
+    const content = entry.message?.content;
+    if (entry.type === 'user' && typeof content === 'string') {
+      const command = COMMAND.exec(content)?.[1];
+      if (command) count(counts.commands, command, when);
+    }
+    if (!Array.isArray(content)) continue;
     for (const block of content as { type?: unknown; name?: unknown; input?: { skill?: unknown } }[]) {
       if (block?.type !== 'tool_use' || typeof block.name !== 'string') continue;
       if (block.name === 'Skill' && typeof block.input?.skill === 'string') count(counts.skills, block.input.skill, when);
@@ -68,16 +88,24 @@ async function entries(dir: string) {
   }
 }
 
-export async function readUsage(paths: ClaudePaths): Promise<Usage> {
-  const counts = { skills: new Map<string, UseCount>(), mcpServers: new Map<string, UseCount>() };
+const DAY = 24 * 60 * 60 * 1000;
+
+export async function readUsage(paths: ClaudePaths, { now = new Date(), days = 30 }: UsageOptions = {}): Promise<Usage> {
+  const since = new Date(now.getTime() - days * DAY).toISOString();
+  const counts: Counts = { skills: new Map(), mcpServers: new Map(), commands: new Map() };
   const problems: string[] = [];
   let sessions = 0;
 
-  const scan = async (path: string) => {
+  // A file last written before the window can't hold anything inside it: not opened.
+  // Returns whether the file was scanned.
+  const scan = async (path: string): Promise<boolean> => {
     try {
-      await scanSession(path, counts);
+      if ((await stat(path)).mtime.toISOString() < since) return false;
+      await scanSession(path, since, counts);
+      return true;
     } catch {
       problems.push(`${path}: could not be read`);
+      return false;
     }
   };
 
@@ -87,8 +115,7 @@ export async function readUsage(paths: ClaudePaths): Promise<Usage> {
     const projectDir = join(paths.projectsDir, project.name);
     for (const item of await entries(projectDir)) {
       if (item.isFile() && item.name.endsWith('.jsonl')) {
-        sessions++;
-        await scan(join(projectDir, item.name));
+        if (await scan(join(projectDir, item.name))) sessions++;
       } else if (item.isDirectory()) {
         const subagents = join(projectDir, item.name, 'subagents');
         for (const file of await entries(subagents)) {
@@ -99,9 +126,11 @@ export async function readUsage(paths: ClaudePaths): Promise<Usage> {
   }
 
   return {
+    since,
     sessions,
     skills: Object.fromEntries(counts.skills),
     mcpServers: Object.fromEntries(counts.mcpServers),
+    commands: Object.fromEntries(counts.commands),
     problems,
   };
 }

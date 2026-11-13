@@ -1,4 +1,6 @@
 {"type": "user", "timestamp": "2026-11-01T10:00:00.000Z", "message": {"role": "user", "content": "my password is FAKE-SECRET-PROMPT"}}
+{"type": "user", "timestamp": "2026-11-02T10:00:00.000Z", "message": {"role": "user", "content": "<command-name>/court</command-name>\n<command-message>court</command-message>\n<command-args>FAKE-SECRET-COMMAND-ARGS</command-args>"}}
+{"type": "assistant", "timestamp": "2026-11-02T10:01:00.000Z", "message": {"role": "assistant", "content": [{"type": "text", "text": "Commands look like <command-name>/quoted</command-name>."}]}}
 {"type": "assistant", "timestamp": "2026-11-01T10:01:00.000Z", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "t", "name": "Skill", "input": {"skill": "design-kit:palette", "args": "FAKE-SECRET-ARGS"}}]}}
 {"type": "assistant", "timestamp": "2026-11-01T10:02:00.000Z", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "t", "name": "mcp__docs-search__search", "input": {"query": "FAKE-SECRET-QUERY"}}]}}
 {"type": "assistant", "timestamp": "2026-11-05T09:00:00.000Z", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "t", "name": "mcp__docs-search__fetch", "input": {"url": "https://example.com"}}]}}

@@ -1,15 +1,18 @@
 import { createReadStream } from 'node:fs';
-import { readdir } from 'node:fs/promises';
+import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
+// The command the user typed is recorded as <command-name>/name</command-name> in their
+// message, followed by its arguments, which are not read.
+const COMMAND = /<command-name>(\/[^<\s]{1,100})<\/command-name>/;
 // Session files hold everything: prompts, code, command output, maybe secrets. Only tool
-// names, the skill name of a Skill call and the timestamp are taken. A line that can't
-// hold a tool call is skipped without parsing, and a line that isn't valid JSON (a
-// session still being written) is ignored.
-async function scanSession(path, counts) {
+// names, the skill name of a Skill call, the command name and the timestamp are taken.
+// A line that can't hold either is skipped without parsing, a line that isn't valid JSON
+// (a session still being written) is ignored, and so is anything before `since`.
+async function scanSession(path, since, counts) {
     const lines = createInterface({ input: createReadStream(path, 'utf8'), crlfDelay: Infinity });
     for await (const line of lines) {
-        if (!line.includes('"tool_use"'))
+        if (!line.includes('"tool_use"') && !line.includes('<command-name>'))
             continue;
         let entry;
         try {
@@ -18,10 +21,17 @@ async function scanSession(path, counts) {
         catch {
             continue;
         }
+        const when = typeof entry.timestamp === 'string' ? entry.timestamp : '';
+        if (when < since)
+            continue;
         const content = entry.message?.content;
+        if (entry.type === 'user' && typeof content === 'string') {
+            const command = COMMAND.exec(content)?.[1];
+            if (command)
+                count(counts.commands, command, when);
+        }
         if (!Array.isArray(content))
             continue;
-        const when = typeof entry.timestamp === 'string' ? entry.timestamp : '';
         for (const block of content) {
             if (block?.type !== 'tool_use' || typeof block.name !== 'string')
                 continue;
@@ -51,16 +61,24 @@ async function entries(dir) {
         throw error;
     }
 }
-export async function readUsage(paths) {
-    const counts = { skills: new Map(), mcpServers: new Map() };
+const DAY = 24 * 60 * 60 * 1000;
+export async function readUsage(paths, { now = new Date(), days = 30 } = {}) {
+    const since = new Date(now.getTime() - days * DAY).toISOString();
+    const counts = { skills: new Map(), mcpServers: new Map(), commands: new Map() };
     const problems = [];
     let sessions = 0;
+    // A file last written before the window can't hold anything inside it: not opened.
+    // Returns whether the file was scanned.
     const scan = async (path) => {
         try {
-            await scanSession(path, counts);
+            if ((await stat(path)).mtime.toISOString() < since)
+                return false;
+            await scanSession(path, since, counts);
+            return true;
         }
         catch {
             problems.push(`${path}: could not be read`);
+            return false;
         }
     };
     // projects/<project>/<session>.jsonl, and its subagents in <session>/subagents/*.jsonl.
@@ -70,8 +88,8 @@ export async function readUsage(paths) {
         const projectDir = join(paths.projectsDir, project.name);
         for (const item of await entries(projectDir)) {
             if (item.isFile() && item.name.endsWith('.jsonl')) {
-                sessions++;
-                await scan(join(projectDir, item.name));
+                if (await scan(join(projectDir, item.name)))
+                    sessions++;
             }
             else if (item.isDirectory()) {
                 const subagents = join(projectDir, item.name, 'subagents');
@@ -83,9 +101,11 @@ export async function readUsage(paths) {
         }
     }
     return {
+        since,
         sessions,
         skills: Object.fromEntries(counts.skills),
         mcpServers: Object.fromEntries(counts.mcpServers),
+        commands: Object.fromEntries(counts.commands),
         problems,
     };
 }
