@@ -33,6 +33,7 @@ export interface ProjectPaths {
   settings: string;
   // Only this user, kept out of git.
   localSettings: string;
+  skillsDir: string;
 }
 
 export function resolveProjectPaths(root: string): ProjectPaths {
@@ -40,5 +41,6 @@ export function resolveProjectPaths(root: string): ProjectPaths {
     root,
     settings: join(root, '.claude', 'settings.json'),
     localSettings: join(root, '.claude', 'settings.local.json'),
+    skillsDir: join(root, '.claude', 'skills'),
   };
 }

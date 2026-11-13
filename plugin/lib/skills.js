@@ -34,7 +34,7 @@ async function scanSkills(dir, source, problems, skip = []) {
     }
     return skills;
 }
-export async function readSkills(paths, plugins = []) {
+export async function readSkills(paths, plugins = [], project) {
     const problems = [];
     const syncedDir = join(paths.skillsDir, 'synced');
     const skills = await scanSkills(paths.skillsDir, 'personal', problems, ['synced']);
@@ -42,6 +42,8 @@ export async function readSkills(paths, plugins = []) {
     for (const bucket of await subfolders(syncedDir)) {
         skills.push(...(await scanSkills(bucket, 'synced', problems)));
     }
+    if (project)
+        skills.push(...(await scanSkills(project.skillsDir, 'project', problems)));
     // A plugin installed in several scopes can share one install folder: read it once.
     const seen = new Set();
     for (const plugin of plugins) {

@@ -20,5 +20,6 @@ export function resolveProjectPaths(root) {
         root,
         settings: join(root, '.claude', 'settings.json'),
         localSettings: join(root, '.claude', 'settings.local.json'),
+        skillsDir: join(root, '.claude', 'skills'),
     };
 }

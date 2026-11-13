@@ -1,10 +1,10 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { parseFrontmatter } from './frontmatter.js';
-import type { ClaudePaths } from './paths.js';
+import type { ClaudePaths, ProjectPaths } from './paths.js';
 import type { InstalledPlugin } from './plugins.js';
 
-export type SkillSource = 'personal' | 'synced' | 'plugin';
+export type SkillSource = 'personal' | 'synced' | 'project' | 'plugin';
 
 export interface Skill {
   name: string;
@@ -49,7 +49,11 @@ async function scanSkills(dir: string, source: SkillSource, problems: string[], 
   return skills;
 }
 
-export async function readSkills(paths: ClaudePaths, plugins: InstalledPlugin[] = []): Promise<SkillInventory> {
+export async function readSkills(
+  paths: ClaudePaths,
+  plugins: InstalledPlugin[] = [],
+  project?: ProjectPaths,
+): Promise<SkillInventory> {
   const problems: string[] = [];
   const syncedDir = join(paths.skillsDir, 'synced');
   const skills = await scanSkills(paths.skillsDir, 'personal', problems, ['synced']);
@@ -57,6 +61,7 @@ export async function readSkills(paths: ClaudePaths, plugins: InstalledPlugin[] 
   for (const bucket of await subfolders(syncedDir)) {
     skills.push(...(await scanSkills(bucket, 'synced', problems)));
   }
+  if (project) skills.push(...(await scanSkills(project.skillsDir, 'project', problems)));
   // A plugin installed in several scopes can share one install folder: read it once.
   const seen = new Set<string>();
   for (const plugin of plugins) {
