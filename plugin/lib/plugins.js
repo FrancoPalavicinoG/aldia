@@ -3,11 +3,15 @@ function splitId(id) {
     const at = id.lastIndexOf('@');
     return at > 0 ? { name: id.slice(0, at), marketplace: id.slice(at + 1) } : { name: id, marketplace: '' };
 }
-export async function readPlugins(paths) {
+// With a project, `enabled` is the value in effect there: the project's shared settings
+// override the user's, and its local settings override both, plugin by plugin.
+export async function readPlugins(paths, project) {
     const problems = [];
     const installed = (await readJson(paths.installedPlugins, problems));
-    const settings = (await readJson(paths.settings, problems));
-    const enabled = settings?.enabledPlugins ?? {};
+    const layers = project ? [paths.settings, project.settings, project.localSettings] : [paths.settings];
+    const enabled = {};
+    for (const file of layers)
+        Object.assign(enabled, (await readJson(file, problems))?.enabledPlugins);
     const plugins = [];
     for (const [id, records] of Object.entries(installed?.plugins ?? {})) {
         for (const record of records) {

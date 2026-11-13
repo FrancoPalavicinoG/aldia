@@ -1,0 +1,6 @@
+{
+  "enabledPlugins": {
+    "code-review@official": false,
+    "design-kit@community": true
+  }
+}

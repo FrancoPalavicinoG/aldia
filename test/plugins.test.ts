@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { resolveClaudePaths } from '../src/paths.js';
+import { resolveClaudePaths, resolveProjectPaths } from '../src/paths.js';
 import { readPlugins } from '../src/plugins.js';
 
 const fixture = (name: string) => fileURLToPath(new URL(`../../test/fixtures/${name}`, import.meta.url));
@@ -50,4 +50,17 @@ test('CLAUDE_CODE_PLUGIN_CACHE_DIR moves only the plugins folder', async () => {
   const env = { HOME: fixture('home-basic'), CLAUDE_CODE_PLUGIN_CACHE_DIR: emptyHome() };
   const { plugins } = await readPlugins(resolveClaudePaths(env));
   assert.deepEqual(plugins, []);
+});
+
+test('a project turns plugins on and off; its local settings win over the shared ones', async () => {
+  const paths = resolveClaudePaths({ HOME: fixture('home-basic') });
+  const { plugins } = await readPlugins(paths, resolveProjectPaths(fixture('project-basic')));
+  // code-review: on for the user, off in the project. design-kit: on in the project, off locally.
+  assert.deepEqual(
+    plugins.map((p) => [p.id, p.enabled]),
+    [
+      ['code-review@official', false],
+      ['design-kit@community', false],
+    ],
+  );
 });
