@@ -42,3 +42,25 @@ test('an empty setup says so in every section', async () => {
   }
   assert.equal(report.match(/- none/g)?.length, 4);
 });
+
+test('inside a project, the inventory shows the config in effect there', async () => {
+  const paths = resolveClaudePaths({ HOME: fixture('home-basic') });
+  const report = await inventoryReport(paths, fixture('project-basic'));
+  for (const line of [
+    '## Plugins (2: 0 enabled, 2 disabled)',
+    '- project (1): deploy',
+    '## MCP servers (5)',
+    '- db: stdio, pg-mcp (project)',
+    '- tickets: http, tickets.example.com (project)',
+  ]) {
+    assert.ok(report.includes(line), `missing line: ${line}\n\n${report}`);
+  }
+  assert.ok(!/FAKE-SECRET|Bearer/.test(report));
+});
+
+test('the home folder is not read as a project', async () => {
+  const home = fixture('home-basic');
+  const report = await inventoryReport(resolveClaudePaths({ HOME: home }), home);
+  assert.ok(!report.includes('- project'), report);
+  assert.ok(report.includes('## Plugins (2: 1 enabled, 1 disabled)'));
+});

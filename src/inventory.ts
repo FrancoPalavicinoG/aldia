@@ -1,5 +1,6 @@
+import { resolve } from 'node:path';
 import { readMcpServers } from './mcp.js';
-import type { ClaudePaths } from './paths.js';
+import { resolveProjectPaths, type ClaudePaths } from './paths.js';
 import { readPlugins } from './plugins.js';
 import { readSkills, type Skill } from './skills.js';
 
@@ -11,18 +12,24 @@ function skillGroups(skills: Skill[]): string[] {
   const groups = new Map<string, string[]>();
   for (const skill of skills) {
     const key =
-      skill.source === 'plugin' ? `plugin ${skill.pluginId}` : skill.source === 'synced' ? 'synced from claude.ai' : 'personal';
+      skill.source === 'plugin'
+        ? `plugin ${skill.pluginId}`
+        : skill.source === 'synced'
+          ? 'synced from claude.ai'
+          : skill.source;
     groups.set(key, [...(groups.get(key) ?? []), skill.name]);
   }
   return [...groups].map(([key, names]) => `- ${key} (${names.length}): ${names.join(', ')}`);
 }
 
-// A plain-text inventory of the setup, for Claude to read and present.
-// Paths start at ~ so the user's home folder isn't spelled out.
-export async function inventoryReport(paths: ClaudePaths): Promise<string> {
-  const plugins = await readPlugins(paths);
-  const skills = await readSkills(paths, plugins.plugins);
-  const mcp = await readMcpServers(paths, plugins.plugins);
+// A plain-text inventory of the setup, for Claude to read and present. With a root
+// folder, the config in effect there. The home folder is not a project: its .claude is
+// the user's own config. Paths start at ~ so the user's home folder isn't spelled out.
+export async function inventoryReport(paths: ClaudePaths, root?: string): Promise<string> {
+  const project = root && resolve(root) !== resolve(paths.home) ? resolveProjectPaths(resolve(root)) : undefined;
+  const plugins = await readPlugins(paths, project);
+  const skills = await readSkills(paths, plugins.plugins, project);
+  const mcp = await readMcpServers(paths, plugins.plugins, project);
   const problems = [...plugins.problems, ...skills.problems, ...mcp.problems];
 
   const enabled = plugins.plugins.filter((p) => p.enabled).length;
