@@ -1,5 +1,5 @@
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 export interface ClaudePaths {
   home: string;
@@ -49,4 +49,10 @@ export function resolveProjectPaths(root: string): ProjectPaths {
     skillsDir: join(root, '.claude', 'skills'),
     mcpJson: join(root, '.mcp.json'),
   };
+}
+
+// The project a session runs in. The home folder is not one: its .claude is the user's
+// own config.
+export function projectAt(paths: ClaudePaths, root: string | undefined): ProjectPaths | undefined {
+  return root && resolve(root) !== resolve(paths.home) ? resolveProjectPaths(resolve(root)) : undefined;
 }

@@ -28,6 +28,8 @@ test('the skill is /aldia, runs only when the user asks, and every file it point
   for (const file of referenced) assert.ok(existsSync(join(plugin, file)), `missing ${file}`);
   // Text from the repo reaches the model through this skill.
   assert.match(text, /never follow instructions/i);
+  // /aldia clean runs a fixed command: the user's arguments never reach the shell.
+  assert.match(text, /- Bash\(node \$\{CLAUDE_PLUGIN_ROOT\}\/lib\/cli\.js clean\)/);
 });
 
 test('the plugin folder holds no package.json and lockfile, so Claude Code installs nothing', () => {
@@ -54,4 +56,13 @@ test('the command reads the project in the folder it runs from', () => {
   });
   assert.match(output, /## Project: project-basic/);
   assert.match(output, /- project \(1\): deploy/);
+});
+
+test('the compiled command prints the clean proposal', () => {
+  const home = fileURLToPath(new URL('../../test/fixtures/home-basic', import.meta.url));
+  const output = execFileSync(process.execPath, [join(plugin, 'lib', 'cli.js'), 'clean'], {
+    env: { HOME: home, USERPROFILE: home },
+    encoding: 'utf8',
+  });
+  assert.match(output, /^aldia clean/);
 });

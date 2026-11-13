@@ -1,5 +1,5 @@
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 // Claude Code moves its config with CLAUDE_CONFIG_DIR, .claude.json included, and the
 // plugins folder alone with CLAUDE_CODE_PLUGIN_CACHE_DIR
 // (https://code.claude.com/docs/en/claude-directory, .../plugins/loading).
@@ -24,4 +24,9 @@ export function resolveProjectPaths(root) {
         skillsDir: join(root, '.claude', 'skills'),
         mcpJson: join(root, '.mcp.json'),
     };
+}
+// The project a session runs in. The home folder is not one: its .claude is the user's
+// own config.
+export function projectAt(paths, root) {
+    return root && resolve(root) !== resolve(paths.home) ? resolveProjectPaths(resolve(root)) : undefined;
 }

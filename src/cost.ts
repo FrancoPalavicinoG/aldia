@@ -40,7 +40,7 @@ const tokens = (chars: number) => Math.ceil(chars / 4);
 
 // Tool names carry the server name with anything outside [A-Za-z0-9_-] turned into "_"
 // ("claude.ai Linear" -> claude_ai_Linear); instructions use the display name.
-const serverKey = (name: string) => name.replace(/[^A-Za-z0-9_-]/g, '_');
+export const serverKey = (name: string) => name.replace(/[^A-Za-z0-9_-]/g, '_');
 
 async function latestSession(projectsDir: string): Promise<{ path: string; mtime: Date } | undefined> {
   let latest: { path: string; mtime: Date } | undefined;
