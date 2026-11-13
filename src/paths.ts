@@ -9,6 +9,8 @@ export interface ClaudePaths {
   globalState: string;
   // Session history: one folder per project, one .jsonl file per session.
   projectsDir: string;
+  // Copies aldia keeps of the files it changes.
+  backupsDir: string;
 }
 
 // Claude Code moves its config with CLAUDE_CONFIG_DIR, .claude.json included, and the
@@ -25,6 +27,7 @@ export function resolveClaudePaths(env: NodeJS.ProcessEnv = process.env): Claude
     skillsDir: join(configDir, 'skills'),
     globalState: env.CLAUDE_CONFIG_DIR ? join(env.CLAUDE_CONFIG_DIR, '.claude.json') : join(home, '.claude.json'),
     projectsDir: join(configDir, 'projects'),
+    backupsDir: join(configDir, 'aldia', 'backups'),
   };
 }
 

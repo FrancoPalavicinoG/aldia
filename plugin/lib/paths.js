@@ -14,6 +14,7 @@ export function resolveClaudePaths(env = process.env) {
         skillsDir: join(configDir, 'skills'),
         globalState: env.CLAUDE_CONFIG_DIR ? join(env.CLAUDE_CONFIG_DIR, '.claude.json') : join(home, '.claude.json'),
         projectsDir: join(configDir, 'projects'),
+        backupsDir: join(configDir, 'aldia', 'backups'),
     };
 }
 export function resolveProjectPaths(root) {
