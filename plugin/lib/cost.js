@@ -9,7 +9,7 @@ const LISTING_CAP = 1536;
 const tokens = (chars) => Math.ceil(chars / 4);
 // Tool names carry the server name with anything outside [A-Za-z0-9_-] turned into "_"
 // ("claude.ai Linear" -> claude_ai_Linear); instructions use the display name.
-const serverKey = (name) => name.replace(/[^A-Za-z0-9_-]/g, '_');
+export const serverKey = (name) => name.replace(/[^A-Za-z0-9_-]/g, '_');
 async function latestSession(projectsDir) {
     let latest;
     for (const project of await dirEntries(projectsDir)) {
