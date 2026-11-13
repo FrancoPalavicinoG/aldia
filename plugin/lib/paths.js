@@ -15,3 +15,12 @@ export function resolveClaudePaths(env = process.env) {
         globalState: env.CLAUDE_CONFIG_DIR ? join(env.CLAUDE_CONFIG_DIR, '.claude.json') : join(home, '.claude.json'),
     };
 }
+export function resolveProjectPaths(root) {
+    return {
+        root,
+        settings: join(root, '.claude', 'settings.json'),
+        localSettings: join(root, '.claude', 'settings.local.json'),
+        skillsDir: join(root, '.claude', 'skills'),
+        mcpJson: join(root, '.mcp.json'),
+    };
+}

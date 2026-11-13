@@ -1,5 +1,5 @@
 import { readJson } from './json.js';
-import type { ClaudePaths } from './paths.js';
+import type { ClaudePaths, ProjectPaths } from './paths.js';
 
 export interface InstalledPlugin {
   id: string;
@@ -27,11 +27,16 @@ function splitId(id: string): { name: string; marketplace: string } {
   return at > 0 ? { name: id.slice(0, at), marketplace: id.slice(at + 1) } : { name: id, marketplace: '' };
 }
 
-export async function readPlugins(paths: ClaudePaths): Promise<PluginInventory> {
+type Settings = { enabledPlugins?: Record<string, boolean> } | undefined;
+
+// With a project, `enabled` is the value in effect there: the project's shared settings
+// override the user's, and its local settings override both, plugin by plugin.
+export async function readPlugins(paths: ClaudePaths, project?: ProjectPaths): Promise<PluginInventory> {
   const problems: string[] = [];
   const installed = (await readJson(paths.installedPlugins, problems)) as { plugins?: Record<string, InstallRecord[]> } | undefined;
-  const settings = (await readJson(paths.settings, problems)) as { enabledPlugins?: Record<string, boolean> } | undefined;
-  const enabled = settings?.enabledPlugins ?? {};
+  const layers = project ? [paths.settings, project.settings, project.localSettings] : [paths.settings];
+  const enabled: Record<string, boolean> = {};
+  for (const file of layers) Object.assign(enabled, ((await readJson(file, problems)) as Settings)?.enabledPlugins);
 
   const plugins: InstalledPlugin[] = [];
   for (const [id, records] of Object.entries(installed?.plugins ?? {})) {

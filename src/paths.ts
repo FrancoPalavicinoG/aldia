@@ -24,3 +24,26 @@ export function resolveClaudePaths(env: NodeJS.ProcessEnv = process.env): Claude
     globalState: env.CLAUDE_CONFIG_DIR ? join(env.CLAUDE_CONFIG_DIR, '.claude.json') : join(home, '.claude.json'),
   };
 }
+
+// A project's own Claude Code config, inside the repo
+// (https://code.claude.com/docs/en/settings, .../mcp).
+export interface ProjectPaths {
+  root: string;
+  // Shared with the team (committed).
+  settings: string;
+  // Only this user, kept out of git.
+  localSettings: string;
+  skillsDir: string;
+  // Project-scope MCP servers, shared with the team.
+  mcpJson: string;
+}
+
+export function resolveProjectPaths(root: string): ProjectPaths {
+  return {
+    root,
+    settings: join(root, '.claude', 'settings.json'),
+    localSettings: join(root, '.claude', 'settings.local.json'),
+    skillsDir: join(root, '.claude', 'skills'),
+    mcpJson: join(root, '.mcp.json'),
+  };
+}

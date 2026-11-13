@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { resolveClaudePaths } from '../src/paths.js';
+import { resolveClaudePaths, resolveProjectPaths } from '../src/paths.js';
 import { readPlugins } from '../src/plugins.js';
 import { readSkills } from '../src/skills.js';
 
@@ -64,4 +64,15 @@ test('skills from installed plugins carry the plugin id, once per install folder
     skills.map((s) => [s.source, s.name, s.pluginId]),
     [['plugin', 'palette', 'design-kit@community']],
   );
+});
+
+test('a project adds its own skills from .claude/skills', async () => {
+  const paths = resolveClaudePaths({ HOME: fixture('home-basic') });
+  const { skills } = await readSkills(paths, [], resolveProjectPaths(fixture('project-basic')));
+  const project = skills.filter((s) => s.source === 'project');
+  assert.deepEqual(
+    project.map((s) => [s.name, s.description]),
+    [['deploy', 'Deploys this service to staging.']],
+  );
+  assert.ok(skills.some((s) => s.source === 'personal' && s.name === 'reviewer'));
 });

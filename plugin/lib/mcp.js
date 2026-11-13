@@ -52,10 +52,19 @@ async function pluginServerMap(root, problems) {
     }
     return map;
 }
-export async function readMcpServers(paths, plugins = []) {
+// With a project, its local servers (in .claude.json, under the project's path) and its
+// .mcp.json join the user's. Claude Code connects once per name, taking local over
+// project over user (https://code.claude.com/docs/en/mcp), so only that one is kept.
+export async function readMcpServers(paths, plugins = [], project) {
     const problems = [];
     const state = (await readJson(paths.globalState, problems));
-    const servers = serversIn(state?.mcpServers, 'user');
+    const scoped = [
+        ...(project ? serversIn(state?.projects?.[project.root]?.mcpServers, 'local') : []),
+        ...(project ? serversIn(unwrap(await readJson(project.mcpJson, problems)), 'project') : []),
+        ...serversIn(state?.mcpServers, 'user'),
+    ];
+    const names = new Set();
+    const servers = scoped.filter((server) => !names.has(server.name) && names.add(server.name));
     const seen = new Set();
     for (const plugin of plugins) {
         if (!plugin.installPath || seen.has(plugin.installPath))
