@@ -174,18 +174,23 @@ test('a big setup gives a short report: the top items, a count of the rest, and 
   );
 
   const report = await cleanReport(resolveClaudePaths({ HOME: home }), undefined, { now });
-  assert.ok(report.length <= 1500, `report is ${report.length} characters`);
-  assert.match(report, /^aldia clean · dry run, nothing changed\n/);
-  assert.match(report, /^saving ~[\d,]+ tok\/request/m);
-  // MCP costs depend on what the session loaded, which changes with where Claude Code runs.
-  assert.match(report, /MCP: latest session \d{4}-\d{2}-\d{2}, varies by where Claude Code runs/);
-  // One line per group: the biggest items, then a count of the rest.
-  assert.match(report, /^turn off \(\d+, ~[\d,]+\): skill-\d+ \[personal\] \d+, .*, \+\d+ more \(~[\d,]+\)$/m);
+  assert.ok(report.length <= 2000, `report is ${report.length} characters`);
+  assert.match(report, /^aldia clean · proposal only, nothing changed\n/);
+  // The saving comes first and alone: it is what the reader looks for.
+  assert.match(report, /^aldia clean[^\n]*\n\nPossible saving: ~[\d,]+ tokens per request\n/);
+  // Each group: a title with its total, then a table with one item per row, the biggest first.
+  assert.match(report, /^Turn off · 120 items · ~[\d,]+ tok\n\| Item \| Origin \| Tok \|\n\|---\|---\|---\|\n/m);
+  assert.match(report, /^\| skill-\d+ \| yours \(~\/\.claude\) \| \d+ \|$/m);
+  assert.equal(report.match(/^\| skill-\d+ \|/gm)?.length, 5);
+  assert.match(report, /^\| and 115 more \| \| ~[\d,]+ \|$/m);
+  // How it was measured goes last. MCP costs depend on what the session loaded.
+  assert.match(report, /^Rule: unused for 30 days → turn off; off and unused for 90 → uninstall\.$/m);
+  assert.match(report, /MCP measured in the latest session \(\d{4}-\d{2}-\d{2}\), varies by where Claude Code runs\.\n$/);
 });
 
 test('when there is little to save, the report says so in one line instead of a list', async () => {
   const home = fileURLToPath(new URL('../../test/fixtures/home-basic', import.meta.url));
   const report = await cleanReport(resolveClaudePaths({ HOME: home }), undefined, { now });
-  assert.match(report, /^already lean: only ~\d+ tok\/request to save$/m);
-  assert.ok(!report.includes('turn off'), report);
+  assert.match(report, /^Already lean: only ~\d+ tokens per request to save$/m);
+  assert.ok(!/turn off/i.test(report), report);
 });
