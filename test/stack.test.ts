@@ -73,3 +73,15 @@ test('Rust, Ruby on Rails, Java and PHP are recognized by their manifests', asyn
   assert.deepEqual(stack.frameworks, ['rails']);
   assert.deepEqual(stack.tools, ['docker']);
 });
+
+test('a monorepo: each subfolder project is detected, with its path as evidence', async () => {
+  const stack = await detectStack(fixture('repo-monorepo'));
+  assert.deepEqual(stack.languages, ['javascript', 'python', 'typescript']);
+  assert.deepEqual(stack.frameworks, ['fastapi', 'next', 'react']);
+  assert.deepEqual(stack.tools, ['docker']);
+  assert.equal(stack.packageManager, 'pnpm');
+  assert.equal(stack.evidence.next, 'apps/web/package.json');
+  assert.equal(stack.evidence.fastapi, 'services/api/pyproject.toml');
+  assert.equal(stack.evidence.docker, 'services/api/Dockerfile');
+  assert.equal(stack.evidence.typescript, 'package.json');
+});

@@ -1,4 +1,4 @@
-import { access, readFile } from 'node:fs/promises';
+import { access, readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { readJson } from './json.js';
 
@@ -117,27 +117,38 @@ class Profile {
   }
 }
 
-async function detectNode(root: string, profile: Profile): Promise<void> {
-  if (!(await exists(join(root, 'package.json')))) return;
-  profile.add('languages', 'javascript', 'package.json');
+// A folder to inspect: where it is on disk and its path from the repo root ('' for the root).
+interface Folder {
+  path: string;
+  rel: string;
+}
 
-  const manifest = (await readJson(join(root, 'package.json'), profile.problems)) as
+// Evidence paths always use '/', so they read the same on every OS.
+const at = (folder: Folder, file: string) => (folder.rel ? `${folder.rel}/${file}` : file);
+
+async function detectNode(folder: Folder, profile: Profile): Promise<void> {
+  if (!(await exists(join(folder.path, 'package.json')))) return;
+  profile.add('languages', 'javascript', at(folder, 'package.json'));
+
+  const manifest = (await readJson(join(folder.path, 'package.json'), profile.problems)) as
     | { dependencies?: Record<string, string>; devDependencies?: Record<string, string> }
     | undefined;
   const deps = { ...manifest?.dependencies, ...manifest?.devDependencies };
 
-  if (await exists(join(root, 'tsconfig.json'))) profile.add('languages', 'typescript', 'tsconfig.json');
-  else if ('typescript' in deps) profile.add('languages', 'typescript', 'package.json');
+  if (await exists(join(folder.path, 'tsconfig.json'))) profile.add('languages', 'typescript', at(folder, 'tsconfig.json'));
+  else if ('typescript' in deps) profile.add('languages', 'typescript', at(folder, 'package.json'));
 
   for (const name of Object.keys(deps)) {
     const id = NODE_FRAMEWORKS[name];
-    if (id) profile.add('frameworks', id, 'package.json');
+    if (id) profile.add('frameworks', id, at(folder, 'package.json'));
   }
 
+  // Folders are visited root first, so the root lockfile wins in a monorepo.
+  if (profile.packageManager) return;
   for (const [file, manager] of NODE_LOCKFILES) {
-    if (await exists(join(root, file))) {
+    if (await exists(join(folder.path, file))) {
       profile.packageManager = manager;
-      profile.evidence[manager] = file;
+      profile.evidence[manager] = at(folder, file);
       break;
     }
   }
@@ -163,38 +174,54 @@ function pyprojectNames(text: string): string[] {
   return [...quoted, ...keys];
 }
 
-async function detectPython(root: string, profile: Profile): Promise<void> {
+async function detectPython(folder: Folder, profile: Profile): Promise<void> {
   const sources: [file: string, names: (text: string) => string[]][] = [
     ['pyproject.toml', pyprojectNames],
     ['requirements.txt', requirementNames],
   ];
   for (const [file, names] of sources) {
-    const text = await readText(join(root, file));
+    const text = await readText(join(folder.path, file));
     if (text === undefined) continue;
-    profile.add('languages', 'python', file);
+    profile.add('languages', 'python', at(folder, file));
     for (const name of names(text)) {
       const id = PYTHON_FRAMEWORKS[name.toLowerCase().replace(/_/g, '-')];
-      if (id) profile.add('frameworks', id, file);
+      if (id) profile.add('frameworks', id, at(folder, file));
     }
   }
 }
 
-async function detectOthers(root: string, profile: Profile): Promise<void> {
+async function detectOthers(folder: Folder, profile: Profile): Promise<void> {
   for (const [file, language] of LANGUAGE_FILES) {
-    if (await exists(join(root, file))) profile.add('languages', language, file);
+    if (await exists(join(folder.path, file))) profile.add('languages', language, at(folder, file));
   }
-  const gemfile = await readText(join(root, 'Gemfile'));
-  if (gemfile && /^\s*gem\s+["']rails["']/m.test(gemfile)) profile.add('frameworks', 'rails', 'Gemfile');
+  const gemfile = await readText(join(folder.path, 'Gemfile'));
+  if (gemfile && /^\s*gem\s+["']rails["']/m.test(gemfile)) profile.add('frameworks', 'rails', at(folder, 'Gemfile'));
 
   for (const [path, tool] of TOOL_FILES) {
-    if (await exists(join(root, path))) profile.add('tools', tool, path);
+    if (await exists(join(folder.path, path))) profile.add('tools', tool, at(folder, path));
   }
+}
+
+// The root and every folder below it, root first (breadth-first). Only folder names
+// are read here. An unreadable folder counts as empty, like a missing file.
+async function folders(root: string): Promise<Folder[]> {
+  const found: Folder[] = [{ path: root, rel: '' }];
+  for (let i = 0; i < found.length; i++) {
+    const folder = found[i]!;
+    const entries = await readdir(folder.path, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (entry.isDirectory()) found.push({ path: join(folder.path, entry.name), rel: at(folder, entry.name) });
+    }
+  }
+  return found;
 }
 
 export async function detectStack(root: string): Promise<StackProfile> {
   const profile = new Profile();
-  await detectNode(root, profile);
-  await detectPython(root, profile);
-  await detectOthers(root, profile);
+  for (const folder of await folders(root)) {
+    await detectNode(folder, profile);
+    await detectPython(folder, profile);
+    await detectOthers(folder, profile);
+  }
   return profile.result();
 }
