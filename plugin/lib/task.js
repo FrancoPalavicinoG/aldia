@@ -2,6 +2,22 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 const run = promisify(execFile);
 const MAX_COMMITS = 10;
+const MAX_CHANGED = 50;
+// `git status --porcelain -z`: entries split by NUL, each "XY path". A rename or copy
+// (X or Y is R or C) is followed by one extra entry with the old path, which is skipped.
+function changedPaths(status) {
+    const entries = status.split('\0');
+    const paths = [];
+    for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i];
+        if (entry.length < 4)
+            continue;
+        paths.push(entry.slice(3));
+        if (/[RC]/.test(entry.slice(0, 2)))
+            i++;
+    }
+    return paths;
+}
 // Runs a read-only git command with a fixed argument list and no shell, so nothing from
 // the repo can become part of a command. A failing command (not a repo, no commits...)
 // gives undefined; git missing from PATH throws.
@@ -17,7 +33,7 @@ async function git(root, env, ...args) {
     }
 }
 export async function readTaskContext(root, env = process.env) {
-    const context = { repo: false, recentCommits: [], problems: [] };
+    const context = { repo: false, recentCommits: [], changedFiles: [], changedTotal: 0, problems: [] };
     let inside;
     try {
         inside = await git(root, env, 'rev-parse', '--is-inside-work-tree');
@@ -35,5 +51,8 @@ export async function readTaskContext(root, env = process.env) {
     // --no-show-signature: a user setting could otherwise mix signature output into the list.
     const log = await git(root, env, 'log', `-${MAX_COMMITS}`, '--no-show-signature', '--format=%s');
     context.recentCommits = log ? log.split('\n').filter(Boolean) : [];
+    const changed = changedPaths((await git(root, env, 'status', '--porcelain', '-z')) ?? '');
+    context.changedFiles = changed.slice(0, MAX_CHANGED);
+    context.changedTotal = changed.length;
     return context;
 }

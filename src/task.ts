@@ -11,10 +11,28 @@ export interface TaskContext {
   branch?: string;
   // Subjects of the latest commits, newest first.
   recentCommits: string[];
+  // Uncommitted changes (staged, unstaged and new files), capped; changedTotal is the real count.
+  changedFiles: string[];
+  changedTotal: number;
   problems: string[];
 }
 
 const MAX_COMMITS = 10;
+const MAX_CHANGED = 50;
+
+// `git status --porcelain -z`: entries split by NUL, each "XY path". A rename or copy
+// (X or Y is R or C) is followed by one extra entry with the old path, which is skipped.
+function changedPaths(status: string): string[] {
+  const entries = status.split('\0');
+  const paths: string[] = [];
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i]!;
+    if (entry.length < 4) continue;
+    paths.push(entry.slice(3));
+    if (/[RC]/.test(entry.slice(0, 2))) i++;
+  }
+  return paths;
+}
 
 // Runs a read-only git command with a fixed argument list and no shell, so nothing from
 // the repo can become part of a command. A failing command (not a repo, no commits...)
@@ -30,7 +48,7 @@ async function git(root: string, env: NodeJS.ProcessEnv, ...args: string[]): Pro
 }
 
 export async function readTaskContext(root: string, env: NodeJS.ProcessEnv = process.env): Promise<TaskContext> {
-  const context: TaskContext = { repo: false, recentCommits: [], problems: [] };
+  const context: TaskContext = { repo: false, recentCommits: [], changedFiles: [], changedTotal: 0, problems: [] };
 
   let inside: string | undefined;
   try {
@@ -48,6 +66,10 @@ export async function readTaskContext(root: string, env: NodeJS.ProcessEnv = pro
   // --no-show-signature: a user setting could otherwise mix signature output into the list.
   const log = await git(root, env, 'log', `-${MAX_COMMITS}`, '--no-show-signature', '--format=%s');
   context.recentCommits = log ? log.split('\n').filter(Boolean) : [];
+
+  const changed = changedPaths((await git(root, env, 'status', '--porcelain', '-z')) ?? '');
+  context.changedFiles = changed.slice(0, MAX_CHANGED);
+  context.changedTotal = changed.length;
 
   return context;
 }

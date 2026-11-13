@@ -65,3 +65,25 @@ test('without git installed it is reported, not thrown', async () => {
   assert.equal(context.problems.length, 1);
   assert.match(context.problems[0]!, /git/);
 });
+
+test('uncommitted changes: modified, deleted, renamed and new files, by path only', async () => {
+  const dir = newRepo();
+  for (const file of ['a.ts', 'b.ts', 'old.ts']) writeFileSync(join(dir, file), `${file}\n`);
+  git(dir, 'add', '.');
+  git(dir, 'commit', '-q', '-m', 'chore: start');
+  writeFileSync(join(dir, 'a.ts'), 'changed\n');
+  git(dir, 'rm', '-q', 'b.ts');
+  git(dir, 'mv', 'old.ts', 'new name.ts');
+  writeFileSync(join(dir, 'my notes.md'), 'draft\n');
+  const context = await readTaskContext(dir, env);
+  assert.deepEqual([...context.changedFiles].sort(), ['a.ts', 'b.ts', 'my notes.md', 'new name.ts']);
+  assert.equal(context.changedTotal, 4);
+});
+
+test('the list stops at 50 files and keeps the real total', async () => {
+  const dir = newRepo();
+  for (let i = 0; i < 60; i++) writeFileSync(join(dir, `file-${i}.txt`), '');
+  const context = await readTaskContext(dir, env);
+  assert.equal(context.changedFiles.length, 50);
+  assert.equal(context.changedTotal, 60);
+});
