@@ -202,15 +202,29 @@ async function detectOthers(folder: Folder, profile: Profile): Promise<void> {
   }
 }
 
-// The root and every folder below it, root first (breadth-first). Only folder names
-// are read here. An unreadable folder counts as empty, like a missing file.
-async function folders(root: string): Promise<Folder[]> {
+// Dependencies, build output and caches: their manifests are not the user's project.
+// Hidden folders (.git, .next, .venv...) are skipped too.
+const SKIPPED_FOLDERS = new Set(['node_modules', 'dist', 'build', 'out', 'target', 'vendor', 'venv', '__pycache__', 'coverage']);
+const MAX_DEPTH = 3;
+const MAX_FOLDERS = 500;
+
+// The root and the folders below it, root first (breadth-first). Only folder names are
+// read here. Symlinks are not followed. An unreadable folder counts as empty, like a
+// missing file.
+async function folders(root: string, problems: string[]): Promise<Folder[]> {
   const found: Folder[] = [{ path: root, rel: '' }];
   for (let i = 0; i < found.length; i++) {
     const folder = found[i]!;
+    const depth = folder.rel ? folder.rel.split('/').length : 0;
+    if (depth === MAX_DEPTH) continue;
     const entries = await readdir(folder.path, { withFileTypes: true }).catch(() => []);
     for (const entry of entries) {
-      if (entry.isDirectory()) found.push({ path: join(folder.path, entry.name), rel: at(folder, entry.name) });
+      if (!entry.isDirectory() || entry.name.startsWith('.') || SKIPPED_FOLDERS.has(entry.name)) continue;
+      if (found.length === MAX_FOLDERS) {
+        problems.push(`stopped after ${MAX_FOLDERS} folders; deeper projects were not scanned`);
+        return found;
+      }
+      found.push({ path: join(folder.path, entry.name), rel: at(folder, entry.name) });
     }
   }
   return found;
@@ -218,7 +232,7 @@ async function folders(root: string): Promise<Folder[]> {
 
 export async function detectStack(root: string): Promise<StackProfile> {
   const profile = new Profile();
-  for (const folder of await folders(root)) {
+  for (const folder of await folders(root, profile.problems)) {
     await detectNode(folder, profile);
     await detectPython(folder, profile);
     await detectOthers(folder, profile);
