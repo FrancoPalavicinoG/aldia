@@ -2,6 +2,7 @@ import { chmod, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'no
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { readJson } from './json.js';
+const KEEP = 10;
 const PRIVATE_DIR = 0o700;
 const PRIVATE_FILE = 0o600;
 async function readIfAny(path) {
@@ -58,6 +59,9 @@ export async function backup(paths, files, { now = new Date() } = {}) {
     }
     const manifestPath = join(dir, 'manifest.json');
     await writePrivate(manifestPath, JSON.stringify(manifest, null, 2));
+    // Only the latest ones are worth undoing; older copies would just keep old secrets around.
+    for (const old of (await backupIds(paths)).slice(0, -KEEP))
+        await rm(join(paths.backupsDir, old), { recursive: true, force: true });
     const seal = async () => {
         for (const file of manifest.files)
             file.after = await fingerprint(file.path);
@@ -66,12 +70,10 @@ export async function backup(paths, files, { now = new Date() } = {}) {
     };
     return { id, dir, seal };
 }
-// The newest backup folder, if any.
-async function latestBackup(paths) {
+// Backup folders, oldest first.
+async function backupIds(paths) {
     const entries = await readdir(paths.backupsDir, { withFileTypes: true }).catch(() => []);
-    const ids = entries.filter((e) => e.isDirectory()).map((e) => e.name).sort();
-    const id = ids.at(-1);
-    return id && join(paths.backupsDir, id);
+    return entries.filter((e) => e.isDirectory()).map((e) => e.name).sort();
 }
 // Written beside the file and renamed over it, so the file is never left half written.
 async function replace(path, data, mode) {
@@ -87,7 +89,8 @@ async function replace(path, data, mode) {
 // leave the change half undone. The backup is kept.
 export async function restoreLatest(paths) {
     const result = { restored: [], skipped: [], problems: [] };
-    const dir = await latestBackup(paths);
+    const id = (await backupIds(paths)).at(-1);
+    const dir = id && join(paths.backupsDir, id);
     if (!dir) {
         result.problems.push('no backup to restore');
         return result;

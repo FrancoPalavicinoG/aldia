@@ -117,3 +117,15 @@ test('a change that never finished is not guessed at: nothing is restored and th
   assert.equal(readFileSync(paths.settings, 'utf8'), '{"theme":"light"}');
   assert.equal(existsSync(saved.dir), true);
 });
+
+test('only the last 10 backups are kept', async () => {
+  const paths = setup();
+  for (let i = 0; i < 12; i++) {
+    const saved = await backup(paths, [paths.settings], { now: new Date(Date.UTC(2026, 10, 13, 18, i)) });
+    await saved.seal();
+  }
+  const kept = readdirSync(paths.backupsDir).sort();
+  assert.equal(kept.length, 10);
+  assert.equal(kept[0], '2026-11-13T18-02-00-000Z');
+  assert.equal(kept.at(-1), '2026-11-13T18-11-00-000Z');
+});

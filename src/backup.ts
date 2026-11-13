@@ -33,6 +33,7 @@ export interface Backup {
   seal(): Promise<void>;
 }
 
+const KEEP = 10;
 const PRIVATE_DIR = 0o700;
 const PRIVATE_FILE = 0o600;
 
@@ -90,6 +91,8 @@ export async function backup(paths: ClaudePaths, files: string[], { now = new Da
   }
   const manifestPath = join(dir, 'manifest.json');
   await writePrivate(manifestPath, JSON.stringify(manifest, null, 2));
+  // Only the latest ones are worth undoing; older copies would just keep old secrets around.
+  for (const old of (await backupIds(paths)).slice(0, -KEEP)) await rm(join(paths.backupsDir, old), { recursive: true, force: true });
   const seal = async () => {
     for (const file of manifest.files) file.after = await fingerprint(file.path);
     manifest.sealed = true;
@@ -105,12 +108,10 @@ export interface RestoreResult {
   problems: string[];
 }
 
-// The newest backup folder, if any.
-async function latestBackup(paths: ClaudePaths): Promise<string | undefined> {
+// Backup folders, oldest first.
+async function backupIds(paths: ClaudePaths): Promise<string[]> {
   const entries = await readdir(paths.backupsDir, { withFileTypes: true }).catch(() => []);
-  const ids = entries.filter((e) => e.isDirectory()).map((e) => e.name).sort();
-  const id = ids.at(-1);
-  return id && join(paths.backupsDir, id);
+  return entries.filter((e) => e.isDirectory()).map((e) => e.name).sort();
 }
 
 // Written beside the file and renamed over it, so the file is never left half written.
@@ -128,7 +129,8 @@ async function replace(path: string, data: Buffer, mode: number): Promise<void> 
 // leave the change half undone. The backup is kept.
 export async function restoreLatest(paths: ClaudePaths): Promise<RestoreResult> {
   const result: RestoreResult = { restored: [], skipped: [], problems: [] };
-  const dir = await latestBackup(paths);
+  const id = (await backupIds(paths)).at(-1);
+  const dir = id && join(paths.backupsDir, id);
   if (!dir) {
     result.problems.push('no backup to restore');
     return result;
