@@ -103,6 +103,8 @@ export interface Proposal {
   // Saved on every request.
   tokens: number;
   lastUsed?: string;
+  // Where a skill without a plugin comes from.
+  origin?: SkillSource;
 }
 
 export interface CleanPlan {
@@ -125,8 +127,14 @@ export function cleanPlan(use: SetupUse, now: Date): CleanPlan {
   const cutoff = (days: number) => new Date(now.getTime() - days * DAY).toISOString();
   const unused = (item: ItemUse, days = TURN_OFF_DAYS) => !item.lastUsed || item.lastUsed < cutoff(days);
   const proposals: Proposal[] = [];
-  const propose = (action: CleanAction, target: string, item: ItemUse) =>
-    proposals.push({ action, target, tokens: item.tokens, ...(item.lastUsed ? { lastUsed: item.lastUsed } : {}) });
+  const propose = (action: CleanAction, target: string, item: ItemUse, origin?: SkillSource) =>
+    proposals.push({
+      action,
+      target,
+      tokens: item.tokens,
+      ...(item.lastUsed ? { lastUsed: item.lastUsed } : {}),
+      ...(origin ? { origin } : {}),
+    });
 
   for (const plugin of use.plugins) {
     if (!plugin.plugin.enabled) {
@@ -139,7 +147,7 @@ export function cleanPlan(use: SetupUse, now: Date): CleanPlan {
       }
     }
   }
-  for (const skill of use.skills) if (skill.tokens > 0 && unused(skill)) propose('skill-off', skill.id, skill);
+  for (const skill of use.skills) if (skill.tokens > 0 && unused(skill)) propose('skill-off', skill.id, skill, skill.source);
   // A server that loaded nothing in the last session (off, failing) has nothing to save.
   for (const server of use.mcpServers) if (server.tokens > 0 && unused(server)) propose('disable-mcp', server.id, server);
   for (const connector of use.connectors) {
@@ -162,6 +170,12 @@ const LABEL: Record<CleanAction, string> = {
   'uninstall-plugin': 'plugin',
 };
 
+const ORIGIN: Partial<Record<SkillSource, string>> = {
+  personal: 'personal',
+  synced: 'synced from claude.ai',
+  project: 'project',
+};
+
 const day = (iso: string) => iso.slice(0, 10);
 const thousands = (n: number) => n.toLocaleString('en-US');
 
@@ -170,7 +184,8 @@ function proposalLines(title: string, proposals: Proposal[]): string[] {
   const total = proposals.reduce((sum, p) => sum + p.tokens, 0);
   const shown = proposals.slice(0, MAX_LINES).map((p) => {
     const when = p.lastUsed ? `last used ${day(p.lastUsed)}` : `not used in ${REMOVE_DAYS} days`;
-    return `- ${LABEL[p.action]} ${p.target}: ~${thousands(p.tokens)} tokens, ${when}`;
+    const origin = p.origin && ORIGIN[p.origin] ? ` (${ORIGIN[p.origin]})` : '';
+    return `- ${LABEL[p.action]} ${p.target}${origin}: ~${thousands(p.tokens)} tokens, ${when}`;
   });
   const rest = proposals.slice(MAX_LINES);
   if (rest.length) {

@@ -113,6 +113,14 @@ test('unused for 30 days: whole plugins, single skills of used plugins, servers 
       ['skill-off', 'reviewer', 30],
     ],
   );
+  // Skills without a plugin say where they come from: the user can't tell otherwise.
+  assert.deepEqual(
+    plan.proposals.filter((p) => p.origin).map((p) => [p.target, p.origin]),
+    [
+      ['pdf-tools', 'synced'],
+      ['reviewer', 'personal'],
+    ],
+  );
   assert.equal(plan.savings, 1520);
   assert.equal(plan.lean, false);
 });
@@ -169,6 +177,7 @@ test('a big setup gives a short report: the top items, a count of the rest, and 
   assert.ok(report.length <= 4000, `report is ${report.length} characters`);
   assert.match(report, /^# aldia clean \(dry run: nothing was changed\)/);
   assert.match(report, /- \.\.\.and \d+ more/);
+  assert.match(report, /- skill skill-\d+ \(personal\): ~\d+ tokens/);
   assert.match(report, /would save ~[\d,]+ tokens on every request/);
 });
 

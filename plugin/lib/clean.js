@@ -56,7 +56,13 @@ export function cleanPlan(use, now) {
     const cutoff = (days) => new Date(now.getTime() - days * DAY).toISOString();
     const unused = (item, days = TURN_OFF_DAYS) => !item.lastUsed || item.lastUsed < cutoff(days);
     const proposals = [];
-    const propose = (action, target, item) => proposals.push({ action, target, tokens: item.tokens, ...(item.lastUsed ? { lastUsed: item.lastUsed } : {}) });
+    const propose = (action, target, item, origin) => proposals.push({
+        action,
+        target,
+        tokens: item.tokens,
+        ...(item.lastUsed ? { lastUsed: item.lastUsed } : {}),
+        ...(origin ? { origin } : {}),
+    });
     for (const plugin of use.plugins) {
         if (!plugin.plugin.enabled) {
             if (unused(plugin, REMOVE_DAYS))
@@ -74,7 +80,7 @@ export function cleanPlan(use, now) {
     }
     for (const skill of use.skills)
         if (skill.tokens > 0 && unused(skill))
-            propose('skill-off', skill.id, skill);
+            propose('skill-off', skill.id, skill, skill.source);
     // A server that loaded nothing in the last session (off, failing) has nothing to save.
     for (const server of use.mcpServers)
         if (server.tokens > 0 && unused(server))
@@ -96,6 +102,11 @@ const LABEL = {
     'disable-connector': 'connector',
     'uninstall-plugin': 'plugin',
 };
+const ORIGIN = {
+    personal: 'personal',
+    synced: 'synced from claude.ai',
+    project: 'project',
+};
 const day = (iso) => iso.slice(0, 10);
 const thousands = (n) => n.toLocaleString('en-US');
 function proposalLines(title, proposals) {
@@ -104,7 +115,8 @@ function proposalLines(title, proposals) {
     const total = proposals.reduce((sum, p) => sum + p.tokens, 0);
     const shown = proposals.slice(0, MAX_LINES).map((p) => {
         const when = p.lastUsed ? `last used ${day(p.lastUsed)}` : `not used in ${REMOVE_DAYS} days`;
-        return `- ${LABEL[p.action]} ${p.target}: ~${thousands(p.tokens)} tokens, ${when}`;
+        const origin = p.origin && ORIGIN[p.origin] ? ` (${ORIGIN[p.origin]})` : '';
+        return `- ${LABEL[p.action]} ${p.target}${origin}: ~${thousands(p.tokens)} tokens, ${when}`;
     });
     const rest = proposals.slice(MAX_LINES);
     if (rest.length) {
