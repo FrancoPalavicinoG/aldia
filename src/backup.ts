@@ -1,5 +1,6 @@
-import { chmod, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { readJson } from './json.js';
 import type { ClaudePaths } from './paths.js';
 
 // A backup is a folder with a copy of each file and a manifest that names them. Copies can
@@ -76,4 +77,48 @@ export async function backup(paths: ClaudePaths, files: string[], { now = new Da
   }
   await writePrivate(join(dir, 'manifest.json'), JSON.stringify(manifest, null, 2));
   return { id, dir };
+}
+
+export interface RestoreResult {
+  restored: string[];
+  problems: string[];
+}
+
+// The newest backup folder, if any.
+async function latestBackup(paths: ClaudePaths): Promise<string | undefined> {
+  const entries = await readdir(paths.backupsDir, { withFileTypes: true }).catch(() => []);
+  const ids = entries.filter((e) => e.isDirectory()).map((e) => e.name).sort();
+  const id = ids.at(-1);
+  return id && join(paths.backupsDir, id);
+}
+
+// Written beside the file and renamed over it, so the file is never left half written.
+async function replace(path: string, data: Buffer, mode: number): Promise<void> {
+  const temp = `${path}.aldia-${process.pid}.tmp`;
+  await writeFile(temp, data, { mode });
+  await chmod(temp, mode);
+  await rename(temp, path);
+}
+
+// Undoes the latest change: each file goes back to its copy, a file that did not exist is
+// removed. The backup is then dropped, so the next restore undoes the change before it.
+export async function restoreLatest(paths: ClaudePaths): Promise<RestoreResult> {
+  const result: RestoreResult = { restored: [], problems: [] };
+  const dir = await latestBackup(paths);
+  if (!dir) {
+    result.problems.push('no backup to restore');
+    return result;
+  }
+  const manifest = (await readJson(join(dir, 'manifest.json'), result.problems)) as Manifest | undefined;
+  if (!manifest) {
+    result.problems.push(`${dir}: backup has no manifest; nothing restored`);
+    return result;
+  }
+  for (const file of manifest.files) {
+    if (file.existed && file.copy) await replace(file.path, await readFile(join(dir, file.copy)), file.mode ?? PRIVATE_FILE);
+    else await rm(file.path, { force: true });
+    result.restored.push(file.path);
+  }
+  await rm(dir, { recursive: true, force: true });
+  return result;
 }
