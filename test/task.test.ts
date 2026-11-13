@@ -1,27 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readTaskContext } from '../src/task.js';
-
-const emptyDir = () => mkdtempSync(join(tmpdir(), 'aldia-task-'));
-
-// git with an empty global config and no system config, so the user's ~/.gitconfig
-// (identity, default branch, signing, hooks) never changes what the tests see.
-const globalConfig = join(emptyDir(), 'gitconfig');
-writeFileSync(globalConfig, '');
-const env = { ...process.env, GIT_CONFIG_GLOBAL: globalConfig, GIT_CONFIG_NOSYSTEM: '1' };
-
-const git = (cwd: string, ...args: string[]) =>
-  execFileSync('git', ['-c', 'user.name=aldia', '-c', 'user.email=aldia@example.com', ...args], { cwd, env });
-
-const newRepo = () => {
-  const dir = emptyDir();
-  git(dir, 'init', '-q', '-b', 'main');
-  return dir;
-};
+import { emptyDir, env, git, newRepo } from './git-env.js';
 
 test('the current branch and the last 10 commit subjects, newest first', async () => {
   const dir = newRepo();
