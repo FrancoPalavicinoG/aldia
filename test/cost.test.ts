@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readContextCost } from '../src/cost.js';
@@ -35,4 +35,50 @@ test('each skill costs its name and listing text every turn; user-only skills co
       ['short', 5 + 2 + 40, 12],
     ],
   );
+});
+
+const attachment = (attachment: object) => JSON.stringify({ type: 'attachment', attachment });
+
+test('MCP cost comes from the last session: tool names and server instructions it loaded', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'aldia-home-'));
+  const dir = join(home, '.claude', 'projects', '-repo');
+  mkdirSync(dir, { recursive: true });
+  const latest = join(dir, 'latest.jsonl');
+  writeFileSync(
+    latest,
+    [
+      attachment({
+        type: 'deferred_tools_delta',
+        addedNames: ['mcp__docs-search__search', 'mcp__docs-search__fetch', 'mcp__claude_ai_Linear__get_issue', 'WebFetch'],
+        removedNames: [],
+      }),
+      attachment({
+        type: 'mcp_instructions_delta',
+        addedNames: ['docs-search', 'claude.ai Linear'],
+        addedBlocks: [`FAKE-SECRET-INSTRUCTIONS ${'i'.repeat(75)}`, 'L'.repeat(50)],
+        removedNames: [],
+      }),
+      attachment({ type: 'deferred_tools_delta', addedNames: [], removedNames: ['mcp__docs-search__fetch'] }),
+    ].join('\n'),
+  );
+  const older = join(dir, 'older.jsonl');
+  writeFileSync(older, attachment({ type: 'deferred_tools_delta', addedNames: ['mcp__old-server__x'], removedNames: [] }));
+  utimesSync(older, new Date('2026-11-01'), new Date('2026-11-01'));
+  utimesSync(latest, new Date('2026-11-09'), new Date('2026-11-09'));
+
+  const cost = await readContextCost(resolveClaudePaths({ HOME: home }), []);
+  assert.equal(cost.measuredAt, '2026-11-09T00:00:00.000Z');
+  assert.deepEqual(
+    cost.mcpServers.map((s) => [s.name, s.tools, s.chars]),
+    [
+      ['claude_ai_Linear', 1, 'mcp__claude_ai_Linear__get_issue'.length + 1 + 50],
+      ['docs-search', 1, 'mcp__docs-search__search'.length + 1 + 100],
+    ],
+  );
+  assert.ok(!JSON.stringify(cost).includes('FAKE-SECRET'));
+});
+
+test('without session history there is no MCP measurement', async () => {
+  const cost = await readContextCost(resolveClaudePaths({ HOME: mkdtempSync(join(tmpdir(), 'aldia-home-')) }), []);
+  assert.deepEqual(cost, { skills: [], mcpServers: [], problems: [] });
 });

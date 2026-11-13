@@ -51,7 +51,7 @@ function count(map, name, when) {
         seen.lastUsed = when;
     map.set(name, seen);
 }
-async function entries(dir) {
+export async function dirEntries(dir) {
     try {
         return await readdir(dir, { withFileTypes: true });
     }
@@ -82,18 +82,18 @@ export async function readUsage(paths, { now = new Date(), days = 30 } = {}) {
         }
     };
     // projects/<project>/<session>.jsonl, and its subagents in <session>/subagents/*.jsonl.
-    for (const project of await entries(paths.projectsDir)) {
+    for (const project of await dirEntries(paths.projectsDir)) {
         if (!project.isDirectory())
             continue;
         const projectDir = join(paths.projectsDir, project.name);
-        for (const item of await entries(projectDir)) {
+        for (const item of await dirEntries(projectDir)) {
             if (item.isFile() && item.name.endsWith('.jsonl')) {
                 if (await scan(join(projectDir, item.name)))
                     sessions++;
             }
             else if (item.isDirectory()) {
                 const subagents = join(projectDir, item.name, 'subagents');
-                for (const file of await entries(subagents)) {
+                for (const file of await dirEntries(subagents)) {
                     if (file.isFile() && file.name.endsWith('.jsonl'))
                         await scan(join(subagents, file.name));
                 }
