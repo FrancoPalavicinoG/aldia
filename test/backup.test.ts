@@ -51,13 +51,14 @@ test('restoring the latest backup puts each file back as it was, and removes the
   const paths = setup();
   const local = join(paths.home, 'project', '.claude', 'settings.local.json');
   if (posix) chmodSync(paths.settings, 0o640);
-  await backup(paths, [paths.settings, local], { now: new Date('2026-11-13T18:00:00.000Z') });
+  const saved = await backup(paths, [paths.settings, local], { now: new Date('2026-11-13T18:00:00.000Z') });
   writeFileSync(paths.settings, '{"theme":"light"}');
   mkdirSync(join(paths.home, 'project', '.claude'), { recursive: true });
   writeFileSync(local, '{"enabledPlugins":{}}');
+  await saved.seal();
 
   const result = await restoreLatest(paths);
-  assert.deepEqual(result, { restored: [paths.settings, local], problems: [] });
+  assert.deepEqual(result, { restored: [paths.settings, local], skipped: [], problems: [] });
   assert.equal(readFileSync(paths.settings, 'utf8'), '{"theme":"dark"}');
   assert.equal(existsSync(local), false);
   if (posix) assert.equal(mode(paths.settings), 0o640);
@@ -67,14 +68,52 @@ test('restoring the latest backup puts each file back as it was, and removes the
 
 test('each restore undoes one change, newest first, until there is nothing left', async () => {
   const paths = setup();
-  await backup(paths, [paths.settings], { now: new Date('2026-11-13T18:00:00.000Z') });
+  const first = await backup(paths, [paths.settings], { now: new Date('2026-11-13T18:00:00.000Z') });
   writeFileSync(paths.settings, '{"theme":"light"}');
-  await backup(paths, [paths.settings], { now: new Date('2026-11-13T18:05:00.000Z') });
+  await first.seal();
+  const second = await backup(paths, [paths.settings], { now: new Date('2026-11-13T18:05:00.000Z') });
   writeFileSync(paths.settings, '{"theme":"blue"}');
+  await second.seal();
 
   await restoreLatest(paths);
   assert.equal(readFileSync(paths.settings, 'utf8'), '{"theme":"light"}');
   await restoreLatest(paths);
   assert.equal(readFileSync(paths.settings, 'utf8'), '{"theme":"dark"}');
-  assert.deepEqual(await restoreLatest(paths), { restored: [], problems: ['no backup to restore'] });
+  assert.deepEqual(await restoreLatest(paths), { restored: [], skipped: [], problems: ['no backup to restore'] });
+});
+
+test('a file changed after aldia changed it is not overwritten: nothing is restored and the backup is kept', async () => {
+  const paths = setup();
+  const saved = await backup(paths, [paths.settings, paths.globalState], { now: new Date('2026-11-13T18:00:00.000Z') });
+  writeFileSync(paths.settings, '{"theme":"light"}');
+  writeFileSync(paths.globalState, '{"mcpServers":{}}');
+  await saved.seal();
+  // Claude Code writes its own state to .claude.json in the meantime.
+  writeFileSync(paths.globalState, '{"mcpServers":{},"numStartups":2}');
+
+  const result = await restoreLatest(paths);
+  assert.deepEqual(result, {
+    restored: [],
+    skipped: [paths.globalState],
+    problems: [`${paths.globalState}: changed after aldia's change; nothing restored`],
+  });
+  // Restoring only part of a change could leave it half undone.
+  assert.equal(readFileSync(paths.settings, 'utf8'), '{"theme":"light"}');
+  assert.equal(readFileSync(paths.globalState, 'utf8'), '{"mcpServers":{},"numStartups":2}');
+  assert.equal(existsSync(saved.dir), true);
+});
+
+test('a change that never finished is not guessed at: nothing is restored and the backup is kept', async () => {
+  const paths = setup();
+  const saved = await backup(paths, [paths.settings], { now: new Date('2026-11-13T18:00:00.000Z') });
+  writeFileSync(paths.settings, '{"theme":"light"}');
+
+  const result = await restoreLatest(paths);
+  assert.deepEqual(result, {
+    restored: [],
+    skipped: [],
+    problems: ["the latest change didn't finish (backup not sealed); nothing restored"],
+  });
+  assert.equal(readFileSync(paths.settings, 'utf8'), '{"theme":"light"}');
+  assert.equal(existsSync(saved.dir), true);
 });

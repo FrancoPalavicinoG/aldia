@@ -1,4 +1,5 @@
 import { chmod, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { readJson } from './json.js';
 import type { ClaudePaths } from './paths.js';
@@ -13,16 +14,23 @@ export interface BackupFile {
   // Name of the copy inside the backup folder, and the file's permissions.
   copy?: string;
   mode?: number;
+  // Fingerprint of the file as the change left it (sha256), null when it left none.
+  after?: string | null;
 }
 
 export interface Manifest {
   createdAt: string;
+  // Set once the change is written: until then it may be half done.
+  sealed: boolean;
   files: BackupFile[];
 }
 
 export interface Backup {
   id: string;
   dir: string;
+  // Call right after the change is written, so a restore can tell whether anyone changed
+  // the files since.
+  seal(): Promise<void>;
 }
 
 const PRIVATE_DIR = 0o700;
@@ -61,10 +69,15 @@ async function writePrivate(path: string, data: string | Buffer): Promise<void> 
   await writeFile(path, data, { mode: PRIVATE_FILE, flag: 'wx' });
 }
 
+const fingerprint = async (path: string): Promise<string | null> => {
+  const current = await readIfAny(path);
+  return current ? createHash('sha256').update(current.data).digest('hex') : null;
+};
+
 // Copies the files a change is about to touch, before it touches them.
 export async function backup(paths: ClaudePaths, files: string[], { now = new Date() } = {}): Promise<Backup> {
   const { id, dir } = await newFolder(paths, now);
-  const manifest: Manifest = { createdAt: now.toISOString(), files: [] };
+  const manifest: Manifest = { createdAt: now.toISOString(), sealed: false, files: [] };
   for (const [i, path] of files.entries()) {
     const current = await readIfAny(path);
     if (!current) {
@@ -75,12 +88,20 @@ export async function backup(paths: ClaudePaths, files: string[], { now = new Da
     await writePrivate(join(dir, copy), current.data);
     manifest.files.push({ path, existed: true, copy, mode: current.mode });
   }
-  await writePrivate(join(dir, 'manifest.json'), JSON.stringify(manifest, null, 2));
-  return { id, dir };
+  const manifestPath = join(dir, 'manifest.json');
+  await writePrivate(manifestPath, JSON.stringify(manifest, null, 2));
+  const seal = async () => {
+    for (const file of manifest.files) file.after = await fingerprint(file.path);
+    manifest.sealed = true;
+    await replace(manifestPath, Buffer.from(JSON.stringify(manifest, null, 2)), PRIVATE_FILE);
+  };
+  return { id, dir, seal };
 }
 
 export interface RestoreResult {
   restored: string[];
+  // Files changed after aldia's change: they are left as they are.
+  skipped: string[];
   problems: string[];
 }
 
@@ -102,8 +123,11 @@ async function replace(path: string, data: Buffer, mode: number): Promise<void> 
 
 // Undoes the latest change: each file goes back to its copy, a file that did not exist is
 // removed. The backup is then dropped, so the next restore undoes the change before it.
+// If any file changed after aldia's change (the user or Claude Code wrote to it), or the
+// change never finished, nothing is restored: that would overwrite someone else's work or
+// leave the change half undone. The backup is kept.
 export async function restoreLatest(paths: ClaudePaths): Promise<RestoreResult> {
-  const result: RestoreResult = { restored: [], problems: [] };
+  const result: RestoreResult = { restored: [], skipped: [], problems: [] };
   const dir = await latestBackup(paths);
   if (!dir) {
     result.problems.push('no backup to restore');
@@ -114,6 +138,17 @@ export async function restoreLatest(paths: ClaudePaths): Promise<RestoreResult> 
     result.problems.push(`${dir}: backup has no manifest; nothing restored`);
     return result;
   }
+  if (!manifest.sealed) {
+    result.problems.push("the latest change didn't finish (backup not sealed); nothing restored");
+    return result;
+  }
+  for (const file of manifest.files) {
+    if ((await fingerprint(file.path)) !== file.after) {
+      result.skipped.push(file.path);
+      result.problems.push(`${file.path}: changed after aldia's change; nothing restored`);
+    }
+  }
+  if (result.skipped.length) return result;
   for (const file of manifest.files) {
     if (file.existed && file.copy) await replace(file.path, await readFile(join(dir, file.copy)), file.mode ?? PRIVATE_FILE);
     else await rm(file.path, { force: true });
