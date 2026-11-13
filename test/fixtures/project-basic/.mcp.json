@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "shared": { "type": "http", "url": "https://project.example.com/mcp" },
+    "db": {
+      "command": "/usr/local/bin/pg-mcp",
+      "args": ["--password", "FAKE-SECRET-ARG"],
+      "env": { "PGPASSWORD": "FAKE-SECRET-ENV" }
+    },
+    "tickets": {
+      "type": "http",
+      "url": "https://tickets.example.com/mcp?key=FAKE-SECRET-QUERY",
+      "headers": { "Authorization": "Bearer FAKE-SECRET-HEADER" }
+    }
+  }
+}

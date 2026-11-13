@@ -1,9 +1,9 @@
 import { basename, join, relative, resolve, isAbsolute } from 'node:path';
 import { readJson } from './json.js';
-import type { ClaudePaths } from './paths.js';
+import type { ClaudePaths, ProjectPaths } from './paths.js';
 import type { InstalledPlugin } from './plugins.js';
 
-export type McpSource = 'user' | 'plugin';
+export type McpSource = 'local' | 'project' | 'user' | 'plugin';
 
 export interface McpServer {
   name: string;
@@ -77,10 +77,30 @@ async function pluginServerMap(root: string, problems: string[]): Promise<Record
   return map;
 }
 
-export async function readMcpServers(paths: ClaudePaths, plugins: InstalledPlugin[] = []): Promise<McpInventory> {
+interface GlobalState {
+  mcpServers?: unknown;
+  // Per-project state keyed by absolute path. It also holds prompts and costs: only
+  // mcpServers is read from it.
+  projects?: Record<string, { mcpServers?: unknown } | undefined>;
+}
+
+// With a project, its local servers (in .claude.json, under the project's path) and its
+// .mcp.json join the user's. Claude Code connects once per name, taking local over
+// project over user (https://code.claude.com/docs/en/mcp), so only that one is kept.
+export async function readMcpServers(
+  paths: ClaudePaths,
+  plugins: InstalledPlugin[] = [],
+  project?: ProjectPaths,
+): Promise<McpInventory> {
   const problems: string[] = [];
-  const state = (await readJson(paths.globalState, problems)) as { mcpServers?: unknown } | undefined;
-  const servers = serversIn(state?.mcpServers, 'user');
+  const state = (await readJson(paths.globalState, problems)) as GlobalState | undefined;
+  const scoped = [
+    ...(project ? serversIn(state?.projects?.[project.root]?.mcpServers, 'local') : []),
+    ...(project ? serversIn(unwrap(await readJson(project.mcpJson, problems)), 'project') : []),
+    ...serversIn(state?.mcpServers, 'user'),
+  ];
+  const names = new Set<string>();
+  const servers = scoped.filter((server) => !names.has(server.name) && names.add(server.name));
 
   const seen = new Set<string>();
   for (const plugin of plugins) {

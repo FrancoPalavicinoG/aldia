@@ -34,6 +34,8 @@ export interface ProjectPaths {
   // Only this user, kept out of git.
   localSettings: string;
   skillsDir: string;
+  // Project-scope MCP servers, shared with the team.
+  mcpJson: string;
 }
 
 export function resolveProjectPaths(root: string): ProjectPaths {
@@ -42,5 +44,6 @@ export function resolveProjectPaths(root: string): ProjectPaths {
     settings: join(root, '.claude', 'settings.json'),
     localSettings: join(root, '.claude', 'settings.local.json'),
     skillsDir: join(root, '.claude', 'skills'),
+    mcpJson: join(root, '.mcp.json'),
   };
 }
