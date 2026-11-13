@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { usageByItem, type SetupData } from '../src/clean.js';
+import { cleanPlan, usageByItem, type PluginUse, type SetupData } from '../src/clean.js';
 import type { InstalledPlugin } from '../src/plugins.js';
 import type { Skill } from '../src/skills.js';
 
@@ -92,4 +92,53 @@ test('each installed item gets its cost and when it was last used, whatever name
       ['Linear', 1400, '2026-11-09T00:00:00.000Z'],
     ],
   );
+});
+
+const now = new Date('2026-11-10T00:00:00.000Z');
+
+test('unused for 30 days: whole plugins, single skills of used plugins, servers and connectors are turned off', () => {
+  const plan = cleanPlan(usageByItem(setup), now);
+  assert.deepEqual(
+    plan.proposals.map((p) => [p.action, p.target, p.tokens]),
+    [
+      ['disable-connector', 'Google Drive', 1200],
+      ['disable-mcp', 'docs-search', 200],
+      ['skill-off', 'design-kit:sketch', 50],
+      ['skill-off', 'pdf-tools', 40],
+      ['skill-off', 'reviewer', 30],
+    ],
+  );
+  assert.equal(plan.savings, 1520);
+  assert.equal(plan.lean, false);
+});
+
+test('a plugin already off is uninstalled only after 90 days unused; under ~500 tokens the setup is lean', () => {
+  const off = (id: string, lastUsed?: string): PluginUse => ({
+    id,
+    tokens: 0,
+    ...(lastUsed ? { lastUsed } : {}),
+    plugin: { id, name: id.split('@')[0]!, marketplace: 'm', version: '1.0.0', scope: 'user', enabled: false, installPath: '' },
+    skills: [],
+  });
+  const idle: PluginUse = {
+    id: 'idle@m',
+    tokens: 100,
+    plugin: { id: 'idle@m', name: 'idle', marketplace: 'm', version: '1.0.0', scope: 'user', enabled: true, installPath: '' },
+    skills: [
+      { id: 'a', tokens: 60 },
+      { id: 'b', tokens: 40 },
+    ],
+  };
+  const plan = cleanPlan(
+    { plugins: [off('old@m'), off('recent@m', '2026-09-15T00:00:00.000Z'), idle], skills: [], mcpServers: [], connectors: [] },
+    now,
+  );
+  assert.deepEqual(
+    plan.proposals.map((p) => [p.action, p.target, p.tokens]),
+    [
+      ['disable-plugin', 'idle@m', 100],
+      ['uninstall-plugin', 'old@m', 0],
+    ],
+  );
+  assert.equal(plan.lean, true);
 });

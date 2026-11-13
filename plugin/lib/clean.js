@@ -39,3 +39,46 @@ export function usageByItem({ plugins, skills, servers, usage, cost }) {
             .sort((a, b) => a.id.localeCompare(b.id)),
     };
 }
+const DAY = 24 * 60 * 60 * 1000;
+export const TURN_OFF_DAYS = 30;
+export const REMOVE_DAYS = 90;
+const LEAN_TOKENS = 500;
+// Turning off is reversible at once, so it comes first: anything unused for 30 days is
+// turned off; only a plugin already off and unused for 90 days is proposed for removal.
+// Of a plugin that is used, only its unused skills are turned off. Connectors are turned
+// off in Claude Code only: they belong to the claude.ai account.
+export function cleanPlan(use, now) {
+    const cutoff = (days) => new Date(now.getTime() - days * DAY).toISOString();
+    const unused = (item, days = TURN_OFF_DAYS) => !item.lastUsed || item.lastUsed < cutoff(days);
+    const proposals = [];
+    const propose = (action, target, item) => proposals.push({ action, target, tokens: item.tokens, ...(item.lastUsed ? { lastUsed: item.lastUsed } : {}) });
+    for (const plugin of use.plugins) {
+        if (!plugin.plugin.enabled) {
+            if (unused(plugin, REMOVE_DAYS))
+                propose('uninstall-plugin', plugin.id, plugin);
+        }
+        else if (unused(plugin)) {
+            propose('disable-plugin', plugin.id, plugin);
+        }
+        else {
+            for (const skill of plugin.skills) {
+                if (skill.tokens > 0 && unused(skill))
+                    propose('skill-off', `${plugin.plugin.name}:${skill.id}`, skill);
+            }
+        }
+    }
+    for (const skill of use.skills)
+        if (skill.tokens > 0 && unused(skill))
+            propose('skill-off', skill.id, skill);
+    // A server that loaded nothing in the last session (off, failing) has nothing to save.
+    for (const server of use.mcpServers)
+        if (server.tokens > 0 && unused(server))
+            propose('disable-mcp', server.id, server);
+    for (const connector of use.connectors) {
+        if (connector.tokens > 0 && unused(connector))
+            propose('disable-connector', connector.id, connector);
+    }
+    proposals.sort((a, b) => b.tokens - a.tokens || a.target.localeCompare(b.target));
+    const savings = proposals.reduce((sum, p) => sum + p.tokens, 0);
+    return { proposals, savings, lean: savings < LEAN_TOKENS };
+}
