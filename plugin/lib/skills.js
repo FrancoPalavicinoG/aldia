@@ -12,6 +12,11 @@ async function subfolders(dir) {
         throw error;
     }
 }
+// Without a description, Claude Code uses the first non-empty line of the markdown body.
+function firstContentLine(text) {
+    const body = text.replace(/\r\n?/g, '\n').replace(/^---\n[\s\S]*?\n---(\n|$)/, '');
+    return body.split('\n').find((line) => line.trim())?.trim() ?? '';
+}
 // Each subfolder holding a SKILL.md is one skill. Folders without it are skipped.
 async function scanSkills(dir, source, problems, skip = []) {
     const skills = [];
@@ -30,7 +35,14 @@ async function scanSkills(dir, source, problems, skip = []) {
             continue;
         }
         const fields = parseFrontmatter(text) ?? {};
-        skills.push({ name: fields.name ?? basename(folder), description: fields.description ?? '', source, path });
+        skills.push({
+            name: fields.name ?? basename(folder),
+            description: fields.description ?? firstContentLine(text),
+            whenToUse: fields.when_to_use ?? '',
+            modelInvocable: fields['disable-model-invocation'] !== 'true',
+            source,
+            path,
+        });
     }
     return skills;
 }
