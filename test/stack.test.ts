@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +8,11 @@ import { detectStack } from '../src/stack.js';
 
 const fixture = (name: string) => fileURLToPath(new URL(`../../test/fixtures/${name}`, import.meta.url));
 const emptyDir = () => mkdtempSync(join(tmpdir(), 'aldia-repo-'));
+const writeAt = (dir: string, rel: string, content: string) => {
+  mkdirSync(join(dir, rel, '..'), { recursive: true });
+  writeFileSync(join(dir, rel), content);
+};
+const vue = '{ "dependencies": { "vue": "3.5.0" } }';
 
 test('a Next.js + Tailwind + TypeScript repo on pnpm', async () => {
   const stack = await detectStack(fixture('repo-next'));
@@ -72,4 +77,60 @@ test('Rust, Ruby on Rails, Java and PHP are recognized by their manifests', asyn
   assert.deepEqual(stack.languages, ['java', 'php', 'ruby', 'rust']);
   assert.deepEqual(stack.frameworks, ['rails']);
   assert.deepEqual(stack.tools, ['docker']);
+});
+
+test('a monorepo: each subfolder project is detected, with its path as evidence', async () => {
+  const stack = await detectStack(fixture('repo-monorepo'));
+  assert.deepEqual(stack.languages, ['javascript', 'python', 'typescript']);
+  assert.deepEqual(stack.frameworks, ['fastapi', 'next', 'react']);
+  assert.deepEqual(stack.tools, ['docker']);
+  assert.equal(stack.packageManager, 'pnpm');
+  assert.equal(stack.evidence.next, 'apps/web/package.json');
+  assert.equal(stack.evidence.fastapi, 'services/api/pyproject.toml');
+  assert.equal(stack.evidence.docker, 'services/api/Dockerfile');
+  assert.equal(stack.evidence.typescript, 'package.json');
+});
+
+test('dependency, build and hidden folders are never scanned', async () => {
+  const dir = emptyDir();
+  for (const rel of ['node_modules/lib', 'apps/web/.next', 'dist', 'build', 'out', 'target', 'vendor', 'venv', 'coverage']) {
+    writeAt(dir, `${rel}/package.json`, vue);
+  }
+  writeAt(dir, '.venv/lib/pyproject.toml', 'dependencies = ["django"]\n');
+  writeAt(dir, 'api/__pycache__/requirements.txt', 'flask\n');
+  const stack = await detectStack(dir);
+  assert.deepEqual(stack.languages, []);
+  assert.deepEqual(stack.frameworks, []);
+});
+
+test('the scan goes 3 folders deep and does not follow symlinks', async () => {
+  const dir = emptyDir();
+  writeAt(dir, 'a/b/c/package.json', '{ "dependencies": { "react": "19.0.0" } }');
+  writeAt(dir, 'a/b/c/d/package.json', vue);
+  const outside = emptyDir();
+  writeAt(outside, 'package.json', '{ "dependencies": { "express": "5.0.0" } }');
+  symlinkSync(outside, join(dir, 'linked'), 'junction');
+  const stack = await detectStack(dir);
+  assert.deepEqual(stack.frameworks, ['react']);
+  assert.equal(stack.evidence.react, 'a/b/c/package.json');
+});
+
+test('a huge repo stops at 500 folders and says so', async () => {
+  const dir = emptyDir();
+  writeAt(dir, 'package.json', '{}');
+  for (let i = 0; i < 600; i++) mkdirSync(join(dir, `pkg-${i}`));
+  const stack = await detectStack(dir);
+  assert.deepEqual(stack.languages, ['javascript']);
+  assert.equal(stack.problems.length, 1);
+  assert.match(stack.problems[0]!, /500 folders/);
+});
+
+test('test fixtures are sample projects, not the repo stack', async () => {
+  const dir = emptyDir();
+  writeAt(dir, 'test/fixtures/app/package.json', vue);
+  writeAt(dir, 'src/__fixtures__/package.json', vue);
+  writeAt(dir, 'pkg/testdata/go.mod', 'module sample\n');
+  const stack = await detectStack(dir);
+  assert.deepEqual(stack.languages, []);
+  assert.deepEqual(stack.frameworks, []);
 });
