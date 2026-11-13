@@ -7,6 +7,8 @@ export interface ClaudePaths {
   installedPlugins: string;
   skillsDir: string;
   globalState: string;
+  // Session history: one folder per project, one .jsonl file per session.
+  projectsDir: string;
 }
 
 // Claude Code moves its config with CLAUDE_CONFIG_DIR, .claude.json included, and the
@@ -22,6 +24,7 @@ export function resolveClaudePaths(env: NodeJS.ProcessEnv = process.env): Claude
     installedPlugins: join(pluginsDir, 'installed_plugins.json'),
     skillsDir: join(configDir, 'skills'),
     globalState: env.CLAUDE_CONFIG_DIR ? join(env.CLAUDE_CONFIG_DIR, '.claude.json') : join(home, '.claude.json'),
+    projectsDir: join(configDir, 'projects'),
   };
 }
 
