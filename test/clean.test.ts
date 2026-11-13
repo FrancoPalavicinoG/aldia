@@ -1,6 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanPlan, usageByItem, type PluginUse, type SetupData } from '../src/clean.js';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { cleanPlan, cleanReport, usageByItem, type PluginUse, type SetupData } from '../src/clean.js';
+import { resolveClaudePaths } from '../src/paths.js';
 import type { InstalledPlugin } from '../src/plugins.js';
 import type { Skill } from '../src/skills.js';
 
@@ -141,4 +146,35 @@ test('a plugin already off is uninstalled only after 90 days unused; under ~500 
     ],
   );
   assert.equal(plan.lean, true);
+});
+
+test('a big setup gives a short report: the top items, a count of the rest, and nothing changed', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'aldia-home-'));
+  for (let i = 0; i < 100; i++) {
+    const dir = join(home, '.claude', 'skills', `skill-${i}`);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'SKILL.md'), `---\nname: skill-${i}\ndescription: ${'d'.repeat(200)}\n---\n`);
+  }
+  const servers = Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`server-${i}`, { url: `https://s${i}.example.com` }]));
+  writeFileSync(join(home, '.claude.json'), JSON.stringify({ mcpServers: servers }));
+  const sessions = join(home, '.claude', 'projects', '-repo');
+  mkdirSync(sessions, { recursive: true });
+  const tools = Object.keys(servers).flatMap((name) => Array.from({ length: 5 }, (_, t) => `mcp__${name}__tool_${t}`));
+  writeFileSync(
+    join(sessions, 'last.jsonl'),
+    JSON.stringify({ type: 'attachment', attachment: { type: 'deferred_tools_delta', addedNames: tools, removedNames: [] } }),
+  );
+
+  const report = await cleanReport(resolveClaudePaths({ HOME: home }), undefined, { now });
+  assert.ok(report.length <= 4000, `report is ${report.length} characters`);
+  assert.match(report, /^# aldia clean \(dry run: nothing was changed\)/);
+  assert.match(report, /- \.\.\.and \d+ more/);
+  assert.match(report, /would save ~[\d,]+ tokens on every request/);
+});
+
+test('when there is little to save, the report says so in one line instead of a list', async () => {
+  const home = fileURLToPath(new URL('../../test/fixtures/home-basic', import.meta.url));
+  const report = await cleanReport(resolveClaudePaths({ HOME: home }), undefined, { now });
+  assert.match(report, /already lean: .* ~\d+ tokens per request/);
+  assert.ok(!report.includes('## Turn off'), report);
 });

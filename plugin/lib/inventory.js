@@ -1,6 +1,6 @@
-import { basename, resolve } from 'node:path';
+import { basename } from 'node:path';
 import { readMcpServers } from './mcp.js';
-import { resolveProjectPaths } from './paths.js';
+import { projectAt } from './paths.js';
 import { readPlugins } from './plugins.js';
 import { readSkills } from './skills.js';
 import { detectStack } from './stack.js';
@@ -68,10 +68,10 @@ function skillGroups(skills) {
     return [...groups].map(([key, names]) => `- ${key} (${names.length}): ${names.join(', ')}`);
 }
 // A plain-text inventory of the setup, for Claude to read and present. With a root
-// folder, the config in effect there. The home folder is not a project: its .claude is
-// the user's own config. Paths start at ~ so the user's home folder isn't spelled out.
+// folder, the config in effect there. Paths start at ~ so the user's home folder isn't
+// spelled out.
 export async function inventoryReport(paths, root, env = process.env) {
-    const project = root && resolve(root) !== resolve(paths.home) ? resolveProjectPaths(resolve(root)) : undefined;
+    const project = projectAt(paths, root);
     const plugins = await readPlugins(paths, project);
     const skills = await readSkills(paths, plugins.plugins, project);
     const mcp = await readMcpServers(paths, plugins.plugins, project);

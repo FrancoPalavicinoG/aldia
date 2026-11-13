@@ -1,8 +1,9 @@
-import { serverKey, type ContextCost } from './cost.js';
-import type { McpServer, McpSource } from './mcp.js';
-import type { InstalledPlugin } from './plugins.js';
-import type { Skill, SkillSource } from './skills.js';
-import type { Usage, UseCount } from './usage.js';
+import { readContextCost, serverKey, type ContextCost } from './cost.js';
+import { readMcpServers, type McpServer, type McpSource } from './mcp.js';
+import { projectAt, type ClaudePaths } from './paths.js';
+import { readPlugins, type InstalledPlugin } from './plugins.js';
+import { readSkills, type Skill, type SkillSource } from './skills.js';
+import { readUsage, type Usage, type UseCount } from './usage.js';
 
 export interface SetupData {
   plugins: InstalledPlugin[];
@@ -148,4 +149,71 @@ export function cleanPlan(use: SetupUse, now: Date): CleanPlan {
   proposals.sort((a, b) => b.tokens - a.tokens || a.target.localeCompare(b.target));
   const savings = proposals.reduce((sum, p) => sum + p.tokens, 0);
   return { proposals, savings, lean: savings < LEAN_TOKENS };
+}
+
+// The report keeps to a fixed size whatever the setup: it is read into the context too.
+const MAX_LINES = 8;
+
+const LABEL: Record<CleanAction, string> = {
+  'disable-plugin': 'plugin',
+  'skill-off': 'skill',
+  'disable-mcp': 'MCP server',
+  'disable-connector': 'connector',
+  'uninstall-plugin': 'plugin',
+};
+
+const day = (iso: string) => iso.slice(0, 10);
+const thousands = (n: number) => n.toLocaleString('en-US');
+
+function proposalLines(title: string, proposals: Proposal[]): string[] {
+  if (!proposals.length) return [];
+  const total = proposals.reduce((sum, p) => sum + p.tokens, 0);
+  const shown = proposals.slice(0, MAX_LINES).map((p) => {
+    const when = p.lastUsed ? `last used ${day(p.lastUsed)}` : `not used in ${REMOVE_DAYS} days`;
+    return `- ${LABEL[p.action]} ${p.target}: ~${thousands(p.tokens)} tokens, ${when}`;
+  });
+  const rest = proposals.slice(MAX_LINES);
+  if (rest.length) {
+    const restTokens = rest.reduce((sum, p) => sum + p.tokens, 0);
+    shown.push(`- ...and ${rest.length} more (~${thousands(restTokens)} tokens)`);
+  }
+  return [`## ${title} (${proposals.length}, ~${thousands(total)} tokens)`, ...shown, ''];
+}
+
+export interface CleanReportOptions {
+  now?: Date;
+}
+
+// What /aldia clean shows: what to turn off or remove and what it saves. Nothing is
+// changed. Skills of plugins that are off don't load, so they cost nothing.
+export async function cleanReport(paths: ClaudePaths, root?: string, { now = new Date() }: CleanReportOptions = {}): Promise<string> {
+  const project = projectAt(paths, root);
+  const plugins = await readPlugins(paths, project);
+  const skills = await readSkills(paths, plugins.plugins, project);
+  const mcp = await readMcpServers(paths, plugins.plugins, project);
+  const usage = await readUsage(paths, { now, days: REMOVE_DAYS });
+  const enabled = new Set(plugins.plugins.filter((p) => p.enabled).map((p) => p.id));
+  const loaded = skills.skills.filter((s) => !s.pluginId || enabled.has(s.pluginId));
+  const cost = await readContextCost(paths, loaded);
+  const problems = [...plugins.problems, ...skills.problems, ...mcp.problems, ...usage.problems, ...cost.problems];
+
+  const plan = cleanPlan(usageByItem({ plugins: plugins.plugins, skills: skills.skills, servers: mcp.servers, usage, cost }), now);
+  const lines = ['# aldia clean (dry run: nothing was changed)', ''];
+  if (plan.lean) {
+    lines.push(`Your setup is already lean: turning off what you haven't used in ${TURN_OFF_DAYS} days would save only ~${thousands(plan.savings)} tokens per request.`);
+  } else {
+    const of = (...actions: CleanAction[]) => plan.proposals.filter((p) => actions.includes(p.action));
+    const measured = cost.measuredAt ? `; MCP sizes from the session of ${day(cost.measuredAt)}` : '';
+    lines.push(
+      `Turning off what you haven't used in ${TURN_OFF_DAYS} days would save ~${thousands(plan.savings)} tokens on every request.`,
+      `Estimate: tokens ~ characters / 4, skill text before Claude Code's listing budget. Usage from ${usage.sessions} sessions since ${day(usage.since)}${measured}.`,
+      '',
+      ...proposalLines('Turn off', of('disable-plugin', 'skill-off', 'disable-mcp')),
+      ...proposalLines('claude.ai connectors: turn off in Claude Code only, they stay in your account', of('disable-connector')),
+      ...proposalLines(`Uninstall: already off and unused for ${REMOVE_DAYS} days`, of('uninstall-plugin')),
+    );
+  }
+  if (problems.length) lines.push('', `## Problems (${problems.length})`, ...problems.slice(0, MAX_LINES).map((p) => `- ${p}`));
+  const text = lines.join('\n');
+  return paths.home.length > 1 ? text.split(paths.home).join('~') : text;
 }
