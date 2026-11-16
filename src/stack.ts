@@ -127,10 +127,11 @@ async function detectNode(folder: Folder, profile: Profile): Promise<void> {
   const deps = { ...manifest?.dependencies, ...manifest?.devDependencies };
 
   if (await exists(join(folder.path, 'tsconfig.json'))) profile.add('languages', 'typescript', at(folder, 'tsconfig.json'));
-  else if ('typescript' in deps) profile.add('languages', 'typescript', at(folder, 'package.json'));
+  else if (Object.hasOwn(deps, 'typescript')) profile.add('languages', 'typescript', at(folder, 'package.json'));
 
   for (const name of Object.keys(deps)) {
-    const id = NODE_FRAMEWORKS[name];
+    // Own keys only: a dependency named "constructor" is not a framework.
+    const id = Object.hasOwn(NODE_FRAMEWORKS, name) ? NODE_FRAMEWORKS[name] : undefined;
     if (id) profile.add('frameworks', id, at(folder, 'package.json'));
   }
 
@@ -175,7 +176,8 @@ async function detectPython(folder: Folder, profile: Profile): Promise<void> {
     if (text === undefined) continue;
     profile.add('languages', 'python', at(folder, file));
     for (const name of names(text)) {
-      const id = PYTHON_FRAMEWORKS[name.toLowerCase().replace(/_/g, '-')];
+      const key = name.toLowerCase().replace(/_/g, '-');
+      const id = Object.hasOwn(PYTHON_FRAMEWORKS, key) ? PYTHON_FRAMEWORKS[key] : undefined;
       if (id) profile.add('frameworks', id, at(folder, file));
     }
   }

@@ -150,3 +150,11 @@ test('a manifest that is a folder, or too big to read, is a problem and the scan
     `${join(dir, 'requirements.txt')}: too big to read (over 1 MB)`,
   ]);
 });
+
+test('a dependency named like a built-in of JavaScript objects is not a framework', async () => {
+  const dir = emptyDir();
+  writeAt(dir, 'package.json', '{ "dependencies": { "constructor": "1.0.0", "hasOwnProperty": "1.0.0" }, "devDependencies": { "__proto__": "1.0.0" } }');
+  writeAt(dir, 'requirements.txt', 'constructor\ntoString\n__proto__\n');
+  const stack = await detectStack(dir);
+  assert.deepEqual(stack.frameworks, []);
+});

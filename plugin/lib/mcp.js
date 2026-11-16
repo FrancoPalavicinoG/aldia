@@ -53,7 +53,9 @@ async function pluginServerMap(root, problems) {
     const manifest = (await readJson(join(root, '.claude-plugin', 'plugin.json'), problems));
     const declared = manifest?.mcpServers;
     const entries = Array.isArray(declared) ? declared : declared === undefined ? [] : [declared];
-    const map = { ...(fromFile && typeof fromFile === 'object' ? fromFile : {}) };
+    // No prototype: a server named "__proto__" is copied as a server, instead of
+    // replacing the map's prototype and hiding what it holds.
+    const map = Object.assign(Object.create(null), fromFile && typeof fromFile === 'object' ? fromFile : {});
     for (const entry of entries) {
         if (typeof entry === 'string') {
             const path = resolve(root, entry);

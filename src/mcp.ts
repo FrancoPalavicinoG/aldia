@@ -72,7 +72,9 @@ async function pluginServerMap(root: string, problems: string[]): Promise<Record
   const declared = manifest?.mcpServers;
   const entries = Array.isArray(declared) ? declared : declared === undefined ? [] : [declared];
 
-  const map: Record<string, unknown> = { ...(fromFile && typeof fromFile === 'object' ? fromFile : {}) };
+  // No prototype: a server named "__proto__" is copied as a server, instead of
+  // replacing the map's prototype and hiding what it holds.
+  const map: Record<string, unknown> = Object.assign(Object.create(null), fromFile && typeof fromFile === 'object' ? fromFile : {});
   for (const entry of entries) {
     if (typeof entry === 'string') {
       const path = resolve(root, entry);

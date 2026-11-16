@@ -144,3 +144,25 @@ test('a field of an unexpected type is a problem, and the server is still listed
     `${file}: MCP server c: not an object`,
   ]);
 });
+
+test('a server named __proto__ in a plugin is listed, not hidden', async () => {
+  const home = emptyHome();
+  const root = join(home, 'plugin');
+  mkdirSync(join(root, '.claude-plugin'), { recursive: true });
+  mkdirSync(join(home, '.claude', 'plugins'), { recursive: true });
+  writeFileSync(
+    join(home, '.claude', 'plugins', 'installed_plugins.json'),
+    JSON.stringify({ plugins: { 'x@m': [{ installPath: root, version: '1.0.0' }] } }),
+  );
+  writeFileSync(join(root, 'servers.json'), '{ "__proto__": { "from-file": { "command": "a" } } }');
+  writeFileSync(
+    join(root, '.claude-plugin', 'plugin.json'),
+    '{ "mcpServers": [{ "__proto__": { "inline": { "command": "b" } }, "shown": { "command": "c" } }, "servers.json"] }',
+  );
+  const paths = resolveClaudePaths({ HOME: home });
+  const { servers } = await readMcpServers(paths, (await readPlugins(paths)).plugins);
+  assert.deepEqual(servers.map((s) => [s.name, s.target]), [
+    ['(invalid name)', ''],
+    ['shown', 'c'],
+  ]);
+});
