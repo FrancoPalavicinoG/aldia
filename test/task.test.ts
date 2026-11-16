@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { copyFileSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { delimiter } from 'node:path';
 import { join } from 'node:path';
 import { readTaskContext } from '../src/task.js';
@@ -116,6 +116,36 @@ test("the repo's git config can't run commands: fsmonitor, filters, signatures",
     if (!context.changedFiles.includes('a.txt')) missed.push(name);
   }
   assert.deepEqual({ ran, missed }, { ran: [], missed: [] });
+});
+
+// A partial clone fetches the objects it lacks when a command needs them, the way the
+// repo's config says: through its ssh command, or through any program (an ext:: remote).
+test("a repo that lacks objects can't make git fetch them through a command", async () => {
+  const cases: [string, (dir: string, mark: ReturnType<typeof witness>) => void][] = [
+    ['ssh command', (dir, mark) => {
+      git(dir, 'config', 'remote.origin.url', 'ssh://example.invalid/repo');
+      git(dir, 'config', 'core.sshCommand', mark.command);
+    }],
+    // In an ext:: address "% " is a space inside one word.
+    ['ext remote', (dir, mark) => {
+      const word = (text: string) => text.replace(/ /g, '% ');
+      git(dir, 'config', 'remote.origin.url', `ext::${word(mark.program)} ${word(mark.script)}`);
+      git(dir, 'config', 'protocol.ext.allow', 'always');
+    }],
+  ];
+  const ran: string[] = [];
+  for (const [name, arm] of cases) {
+    const dir = changedRepo();
+    const tree = git(dir, 'rev-parse', 'HEAD^{tree}').toString().trim();
+    rmSync(join(dir, '.git', 'objects', tree.slice(0, 2), tree.slice(2)), { force: true });
+    git(dir, 'config', 'extensions.partialClone', 'origin');
+    git(dir, 'config', 'remote.origin.promisor', 'true');
+    const mark = witness({ exits: true });
+    arm(dir, mark);
+    await readTaskContext(dir, env);
+    if (mark.ran()) ran.push(name);
+  }
+  assert.deepEqual(ran, []);
 });
 
 test('reading the repo never rewrites its index', async () => {

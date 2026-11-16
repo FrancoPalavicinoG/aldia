@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { commandFor, runOperation } from '../src/claude-cli.js';
@@ -78,6 +78,25 @@ test('a failure gives a short reason, never what the CLI printed; already done c
     ok: false,
     problem: 'claude mcp remove db failed (exit 1)',
   });
+});
+
+// The command runs from the project folder even when the change is the user's own.
+test('a claude inside the folder aldia runs from is never used, whatever the scope', { skip: process.platform === 'win32' }, async () => {
+  const project = realpathSync(mkdtempSync(join(tmpdir(), 'aldia-project-')));
+  mkdirSync(join(project, 'bin'));
+  writeFileSync(join(project, 'bin', 'claude'), '#!/bin/sh\nexit 0\n');
+  chmodSync(join(project, 'bin', 'claude'), 0o755);
+  const op = { kind: 'disable-plugin', plugin: 'notes@community', scope: 'user' } as const;
+  const from = process.cwd();
+  process.chdir(project);
+  try {
+    assert.deepEqual(await runOperation(op, { env: { PATH: join(project, 'bin') } }), {
+      ok: false,
+      problem: 'claude could not be run (not installed or not on PATH)',
+    });
+  } finally {
+    process.chdir(from);
+  }
 });
 
 test('a missing claude or one that hangs is reported, not waited on forever', async () => {
