@@ -102,3 +102,12 @@ test('a folder with no manifests and no git says so', async () => {
   assert.ok(report.includes('- no manifest found'), report);
   assert.ok(report.includes('- not a git repository'), report);
 });
+
+test("when git can't list the changes, the report says they weren't checked instead of none", async () => {
+  const dir = newRepo();
+  git(dir, 'commit', '-q', '--allow-empty', '-m', 'chore: start');
+  writeFileSync(join(dir, '.git', 'index'), 'not an index');
+  const report = await inventoryReport(resolveClaudePaths({ HOME: fixture('home-basic') }), dir, env);
+  assert.ok(report.includes('- uncommitted changes: not checked'), report);
+  assert.ok(report.includes("- git status failed (timed out or couldn't read the repo); uncommitted changes not checked"), report);
+});

@@ -18,6 +18,8 @@ export interface TaskContext {
   // Uncommitted changes (staged, unstaged and new files), capped; changedTotal is the real count.
   changedFiles: string[];
   changedTotal: number;
+  // False when git couldn't list them (timeout, too much output, unreadable index).
+  changesChecked: boolean;
   problems: string[];
 }
 
@@ -103,7 +105,7 @@ async function filtersOff(bin: string, root: string, env: NodeJS.ProcessEnv): Pr
 }
 
 export async function readTaskContext(root: string, env: NodeJS.ProcessEnv = process.env): Promise<TaskContext> {
-  const context: TaskContext = { repo: false, recentCommits: [], changedFiles: [], changedTotal: 0, problems: [] };
+  const context: TaskContext = { repo: false, recentCommits: [], changedFiles: [], changedTotal: 0, changesChecked: false, problems: [] };
   const safe = withConfig(env, SAFE_CONFIG);
 
   const bin = findProgram('git', env, [root]).path;
@@ -129,7 +131,12 @@ export async function readTaskContext(root: string, env: NodeJS.ProcessEnv = pro
     return context;
   }
   const status = await git(bin, root, withConfig(safe, filters), 'status', '--porcelain', '-z', '--ignore-submodules=all');
-  const changed = changedPaths(output(status) ?? '');
+  if (!status.ok) {
+    context.problems.push("git status failed (timed out or couldn't read the repo); uncommitted changes not checked");
+    return context;
+  }
+  context.changesChecked = true;
+  const changed = changedPaths(status.stdout);
   context.changedFiles = changed.slice(0, MAX_CHANGED);
   context.changedTotal = changed.length;
 

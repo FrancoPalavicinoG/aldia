@@ -80,7 +80,7 @@ async function filtersOff(bin, root, env) {
     ]);
 }
 export async function readTaskContext(root, env = process.env) {
-    const context = { repo: false, recentCommits: [], changedFiles: [], changedTotal: 0, problems: [] };
+    const context = { repo: false, recentCommits: [], changedFiles: [], changedTotal: 0, changesChecked: false, problems: [] };
     const safe = withConfig(env, SAFE_CONFIG);
     const bin = findProgram('git', env, [root]).path;
     if (!bin) {
@@ -104,7 +104,12 @@ export async function readTaskContext(root, env = process.env) {
         return context;
     }
     const status = await git(bin, root, withConfig(safe, filters), 'status', '--porcelain', '-z', '--ignore-submodules=all');
-    const changed = changedPaths(output(status) ?? '');
+    if (!status.ok) {
+        context.problems.push("git status failed (timed out or couldn't read the repo); uncommitted changes not checked");
+        return context;
+    }
+    context.changesChecked = true;
+    const changed = changedPaths(status.stdout);
     context.changedFiles = changed.slice(0, MAX_CHANGED);
     context.changedTotal = changed.length;
     return context;
