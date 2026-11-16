@@ -81,7 +81,8 @@ export async function runOperation(op: Operation, options: RunOptions = {}): Pro
   const env = options.env ?? process.env;
   let command = options.claude;
   if (!command) {
-    const found = findProgram('claude', env, options.cwd ? [options.cwd] : []);
+    // Without a project folder the command still runs from the one aldia is in.
+    const found = findProgram('claude', env, [options.cwd ?? process.cwd()]);
     if (!found.path) return { ok: false, problem: found.problem ?? 'claude could not be run (not installed or not on PATH)' };
     command = [found.path];
   }
