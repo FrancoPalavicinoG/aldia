@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -19,3 +19,14 @@ export const newRepo = () => {
   git(dir, 'init', '-q', '-b', 'main');
   return dir;
 };
+
+// A command for a repo's git config that leaves a mark when git runs it, and passes its
+// input through (a filter must). Paths use '/', which git's shell reads on every OS.
+export function witness(): { command: string; ran: () => boolean } {
+  const dir = emptyDir();
+  const mark = join(dir, 'ran');
+  const script = join(dir, 'witness.cjs');
+  writeFileSync(script, `require('fs').writeFileSync(${JSON.stringify(mark)}, ''); process.stdin.pipe(process.stdout);`);
+  const slash = (path: string) => path.replace(/\\/g, '/');
+  return { command: `"${slash(process.execPath)}" "${slash(script)}"`, ran: () => existsSync(mark) };
+}

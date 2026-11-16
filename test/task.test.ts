@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readTaskContext } from '../src/task.js';
-import { emptyDir, env, git, newRepo } from './git-env.js';
+import { emptyDir, env, git, newRepo, witness } from './git-env.js';
 
 test('the current branch and the last 10 commit subjects, newest first', async () => {
   const dir = newRepo();
@@ -68,4 +68,90 @@ test('the list stops at 50 files and keeps the real total', async () => {
   const context = await readTaskContext(dir, env);
   assert.equal(context.changedFiles.length, 50);
   assert.equal(context.changedTotal, 60);
+});
+
+// A repo whose file changed but kept its size and an old time: git has to compare its
+// content, which is when it runs filters.
+function changedRepo(): string {
+  const dir = newRepo();
+  writeFileSync(join(dir, 'a.txt'), 'one\n');
+  git(dir, 'add', '.');
+  git(dir, 'commit', '-q', '-m', 'chore: start');
+  writeFileSync(join(dir, 'a.txt'), 'two\n');
+  utimesSync(join(dir, 'a.txt'), new Date('2020-01-01'), new Date('2020-01-01'));
+  return dir;
+}
+
+test("the repo's git config can't run commands: fsmonitor, filters, signatures", async () => {
+  const cases: [string, (dir: string, command: string) => void][] = [
+    ['fsmonitor', (dir, command) => git(dir, 'config', 'core.fsmonitor', command)],
+    ['filter in .gitattributes', (dir, command) => {
+      git(dir, 'config', 'filter.x.clean', command);
+      writeFileSync(join(dir, '.gitattributes'), '*.txt filter=x\n');
+    }],
+    ['filter in .git/info/attributes', (dir, command) => {
+      git(dir, 'config', 'filter.x.process', command);
+      git(dir, 'config', 'filter.x.required', 'true');
+      writeFileSync(join(dir, '.git', 'info', 'attributes'), '*.txt filter=x\n');
+    }],
+    // A "=" would split a -c argument; names reach git through the environment instead.
+    ['filter with "=" in its name', (dir, command) => {
+      git(dir, 'config', 'filter.x=y.clean', command);
+      writeFileSync(join(dir, '.gitattributes'), '*.txt filter=x=y\n');
+    }],
+    ['signature check', (dir, command) => {
+      git(dir, 'config', 'log.showSignature', 'true');
+      git(dir, 'config', 'gpg.program', command);
+    }],
+  ];
+  const ran: string[] = [];
+  const missed: string[] = [];
+  for (const [name, arm] of cases) {
+    const dir = changedRepo();
+    const mark = witness();
+    arm(dir, mark.command);
+    const context = await readTaskContext(dir, env);
+    if (mark.ran()) ran.push(name);
+    if (!context.changedFiles.includes('a.txt')) missed.push(name);
+  }
+  assert.deepEqual({ ran, missed }, { ran: [], missed: [] });
+});
+
+test('reading the repo never rewrites its index', async () => {
+  // A file touched but not changed: a plain git status would refresh the index.
+  const dir = newRepo();
+  writeFileSync(join(dir, 'a.txt'), 'one\n');
+  git(dir, 'add', '.');
+  git(dir, 'commit', '-q', '-m', 'chore: start');
+  utimesSync(join(dir, 'a.txt'), new Date('2030-01-01'), new Date('2030-01-01'));
+  const index = join(dir, '.git', 'index');
+  const before = readFileSync(index);
+  await readTaskContext(dir, env);
+  assert.deepEqual(readFileSync(index), before);
+});
+
+test("a folder shaped like a bare repo inside the project is not used as git's config", async () => {
+  const outer = newRepo();
+  const bare = join(outer, 'vendor', 'repo.git');
+  mkdirSync(bare, { recursive: true });
+  git(bare, 'init', '-q', '--bare');
+  const mark = witness();
+  git(bare, 'config', 'core.bare', 'false');
+  git(bare, 'config', 'core.worktree', '..');
+  git(bare, 'config', 'core.fsmonitor', mark.command);
+  const context = await readTaskContext(bare, env);
+  assert.equal(mark.ran(), false);
+  assert.equal(context.repo, false);
+});
+
+test("a submodule's own config can't run commands", async () => {
+  const sub = changedRepo();
+  const dir = newRepo();
+  git(dir, 'commit', '-q', '--allow-empty', '-m', 'chore: start');
+  git(dir, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', sub, 'sub');
+  writeFileSync(join(dir, 'sub', 'a.txt'), 'three\n');
+  const mark = witness();
+  git(join(dir, 'sub'), 'config', 'core.fsmonitor', mark.command);
+  await readTaskContext(dir, env);
+  assert.equal(mark.ran(), false);
 });
