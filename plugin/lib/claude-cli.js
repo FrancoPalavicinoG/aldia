@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { findProgram } from './programs.js';
 const run = promisify(execFile);
 const SCOPES = new Set(['user', 'local']);
 // Starts with a letter or digit, so it can never pass as an option ("-s", "--scope").
@@ -41,12 +42,21 @@ function cliResult(stdout) {
 export async function runOperation(op, options = {}) {
     const args = commandFor(op);
     check(op.scope !== 'local' || !!options.cwd, 'local scope needs the project folder');
-    const [bin = 'claude', ...prefix] = options.claude ?? ['claude'];
+    const env = options.env ?? process.env;
+    let command = options.claude;
+    if (!command) {
+        // Without a project folder the command still runs from the one aldia is in.
+        const found = findProgram('claude', env, [options.cwd ?? process.cwd()]);
+        if (!found.path)
+            return { ok: false, problem: found.problem ?? 'claude could not be run (not installed or not on PATH)' };
+        command = [found.path];
+    }
+    const [bin = 'claude', ...prefix] = command;
     const what = `claude ${args.slice(0, 3).join(' ')}`;
     try {
         await run(bin, [...prefix, ...args], {
             ...(options.cwd ? { cwd: options.cwd } : {}),
-            env: options.env ?? process.env,
+            env,
             timeout: options.timeout ?? 60_000,
             encoding: 'utf8',
         });

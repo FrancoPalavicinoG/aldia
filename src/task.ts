@@ -1,5 +1,9 @@
 import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { findProgram } from './programs.js';
 
 const run = promisify(execFile);
 
@@ -14,6 +18,8 @@ export interface TaskContext {
   // Uncommitted changes (staged, unstaged and new files), capped; changedTotal is the real count.
   changedFiles: string[];
   changedTotal: number;
+  // False when git couldn't list them (timeout, too much output, unreadable index).
+  changesChecked: boolean;
   problems: string[];
 }
 
@@ -34,40 +40,110 @@ function changedPaths(status: string): string[] {
   return paths;
 }
 
+// git reads the repo's own config, and some of it runs commands: fsmonitor, filters (run
+// when status compares contents), hooks, a bare repo's config committed in a subfolder,
+// submodules' configs. Settings passed through the environment win over the repo's, and
+// a value given there never becomes part of an argument, whatever the repo names it.
+// A folder that is never created: no hook can be found there.
+const NO_HOOKS = join(tmpdir(), `aldia-no-hooks-${randomUUID()}`);
+const SAFE_CONFIG: [string, string][] = [
+  ['core.fsmonitor', 'false'],
+  ['core.hooksPath', NO_HOOKS],
+  ['safe.bareRepository', 'explicit'],
+];
+
+// A partial clone fetches the objects it lacks when a command needs them, through the ssh
+// command or the remote program the repo's config names. Two barriers, each enough alone:
+// no fetching of missing objects (git 2.45 and later), and no transport allowed at all,
+// which wins over the repo's own protocol settings on every version. And git never stops
+// to ask for a password.
+const NO_NETWORK = { GIT_NO_LAZY_FETCH: '1', GIT_ALLOW_PROTOCOL: '', GIT_TERMINAL_PROMPT: '0' };
+
+function withConfig(env: NodeJS.ProcessEnv, settings: [string, string][]): NodeJS.ProcessEnv {
+  const start = Number(env.GIT_CONFIG_COUNT) || 0;
+  const added: NodeJS.ProcessEnv = { GIT_CONFIG_COUNT: String(start + settings.length) };
+  settings.forEach(([key, value], i) => {
+    added[`GIT_CONFIG_KEY_${start + i}`] = key;
+    added[`GIT_CONFIG_VALUE_${start + i}`] = value;
+  });
+  return { ...env, ...added };
+}
+
+type GitResult = { ok: true; stdout: string } | { ok: false; exitCode?: number };
+
 // Runs a read-only git command with a fixed argument list and no shell, so nothing from
-// the repo can become part of a command. A failing command (not a repo, no commits...)
-// gives undefined; git missing from PATH throws.
-async function git(root: string, env: NodeJS.ProcessEnv, ...args: string[]): Promise<string | undefined> {
+// the repo can become part of a command. --no-optional-locks: git doesn't rewrite the
+// index. `bin` is git's absolute path (see findProgram).
+async function git(bin: string, root: string, env: NodeJS.ProcessEnv, ...args: string[]): Promise<GitResult> {
   try {
-    const { stdout } = await run('git', args, { cwd: root, env, timeout: 5000, encoding: 'utf8' });
-    return stdout;
+    const { stdout } = await run(bin, ['--no-pager', '--no-optional-locks', ...args], {
+      cwd: root,
+      env,
+      timeout: 5000,
+      encoding: 'utf8',
+    });
+    return { ok: true, stdout };
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw error;
-    return undefined;
+    const failure = error as NodeJS.ErrnoException & { code?: string | number };
+    return typeof failure.code === 'number' ? { ok: false, exitCode: failure.code } : { ok: false };
   }
 }
 
-export async function readTaskContext(root: string, env: NodeJS.ProcessEnv = process.env): Promise<TaskContext> {
-  const context: TaskContext = { repo: false, recentCommits: [], changedFiles: [], changedTotal: 0, problems: [] };
+const output = (result: GitResult) => (result.ok ? result.stdout : undefined);
 
-  let inside: string | undefined;
-  try {
-    inside = await git(root, env, 'rev-parse', '--is-inside-work-tree');
-  } catch {
+// Every filter the repo's config names, turned off. Names come NUL-separated (-z), so no
+// name can pass for two. Undefined when they can't be read: then status must not run.
+async function filtersOff(bin: string, root: string, env: NodeJS.ProcessEnv): Promise<[string, string][] | undefined> {
+  const result = await git(bin, root, env, 'config', '-z', '--name-only', '--get-regexp', '^filter\\.');
+  // Exit 1: no filter at all.
+  if (!result.ok) return result.exitCode === 1 ? [] : undefined;
+  const names = new Set(
+    result.stdout
+      .split('\0')
+      .filter(Boolean)
+      .map((key) => key.slice('filter.'.length, key.lastIndexOf('.'))),
+  );
+  return [...names].flatMap((name): [string, string][] => [
+    [`filter.${name}.clean`, ''],
+    [`filter.${name}.smudge`, ''],
+    [`filter.${name}.process`, ''],
+    [`filter.${name}.required`, 'false'],
+  ]);
+}
+
+export async function readTaskContext(root: string, env: NodeJS.ProcessEnv = process.env): Promise<TaskContext> {
+  const context: TaskContext = { repo: false, recentCommits: [], changedFiles: [], changedTotal: 0, changesChecked: false, problems: [] };
+  const safe = { ...withConfig(env, SAFE_CONFIG), ...NO_NETWORK };
+
+  const bin = findProgram('git', env, [root]).path;
+  if (!bin) {
     context.problems.push('git could not be run (not installed or not on PATH)');
     return context;
   }
-  if (inside?.trim() !== 'true') return context;
+  const inside = await git(bin, root, safe, 'rev-parse', '--is-inside-work-tree');
+  if (output(inside)?.trim() !== 'true') return context;
   context.repo = true;
 
-  const branch = (await git(root, env, 'symbolic-ref', '-q', '--short', 'HEAD'))?.trim();
+  const branch = output(await git(bin, root, safe, 'symbolic-ref', '-q', '--short', 'HEAD'))?.trim();
   if (branch) context.branch = branch;
 
-  // --no-show-signature: a user setting could otherwise mix signature output into the list.
-  const log = await git(root, env, 'log', `-${MAX_COMMITS}`, '--no-show-signature', '--format=%s');
+  // --no-show-signature: a user setting could otherwise mix signature output into the list
+  // and run the signature program.
+  const log = output(await git(bin, root, safe, 'log', `-${MAX_COMMITS}`, '--no-show-signature', '--format=%s'));
   context.recentCommits = log ? log.split('\n').filter(Boolean) : [];
 
-  const changed = changedPaths((await git(root, env, 'status', '--porcelain', '-z')) ?? '');
+  const filters = await filtersOff(bin, root, safe);
+  if (!filters) {
+    context.problems.push("git filters couldn't be read; uncommitted changes not checked");
+    return context;
+  }
+  const status = await git(bin, root, withConfig(safe, filters), 'status', '--porcelain', '-z', '--ignore-submodules=all');
+  if (!status.ok) {
+    context.problems.push("git status failed (timed out or couldn't read the repo); uncommitted changes not checked");
+    return context;
+  }
+  context.changesChecked = true;
+  const changed = changedPaths(status.stdout);
   context.changedFiles = changed.slice(0, MAX_CHANGED);
   context.changedTotal = changed.length;
 

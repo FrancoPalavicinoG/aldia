@@ -42,7 +42,10 @@ function workLines(task) {
         lines.push('- recent commits:', ...task.recentCommits.map((s) => `  - ${clean(s)}`));
     else
         lines.push('- recent commits: none');
-    if (task.changedTotal) {
+    if (!task.changesChecked) {
+        lines.push('- uncommitted changes: not checked');
+    }
+    else if (task.changedTotal) {
         const shown = task.changedFiles.slice(0, MAX_CHANGED_SHOWN).map(clean);
         const count = task.changedTotal > shown.length ? `${task.changedTotal}, first ${shown.length}` : `${task.changedTotal}`;
         lines.push(`- uncommitted changes (${count}): ${shown.join(', ')}`);

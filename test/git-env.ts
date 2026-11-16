@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -19,3 +19,17 @@ export const newRepo = () => {
   git(dir, 'init', '-q', '-b', 'main');
   return dir;
 };
+
+// A command for a repo's git config that leaves a mark when git runs it, and passes its
+// input through (a filter must). Paths use '/', which git's shell reads on every OS.
+// With `exits`, it ends at once instead: git waits on a transport that keeps its input open.
+export function witness({ exits = false } = {}): { command: string; program: string; script: string; ran: () => boolean } {
+  const dir = emptyDir();
+  const mark = join(dir, 'ran');
+  const script = join(dir, 'witness.cjs');
+  const then = exits ? 'process.exit(1);' : 'process.stdin.pipe(process.stdout);';
+  writeFileSync(script, `require('fs').writeFileSync(${JSON.stringify(mark)}, ''); ${then}`);
+  const slash = (path: string) => path.replace(/\\/g, '/');
+  const [program, file] = [slash(process.execPath), slash(script)];
+  return { command: `"${program}" "${file}"`, program, script: file, ran: () => existsSync(mark) };
+}
