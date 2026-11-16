@@ -3,6 +3,7 @@ import { readMcpServers, type McpServer, type McpSource } from './mcp.js';
 import { projectAt, type ClaudePaths } from './paths.js';
 import { readPlugins, type InstalledPlugin } from './plugins.js';
 import { readSkills, type Skill, type SkillSource } from './skills.js';
+import { line, oneLine } from './text.js';
 import { readUsage, type Usage, type UseCount } from './usage.js';
 
 export interface SetupData {
@@ -179,8 +180,8 @@ const ACTION_ORIGIN: Partial<Record<CleanAction, string>> = {
 const day = (iso: string) => iso.slice(0, 10);
 const thousands = (n: number) => n.toLocaleString('en-US');
 const total = (proposals: Proposal[]) => proposals.reduce((sum, p) => sum + p.tokens, 0);
-// Names come from local config: a "|" would break the table.
-const cell = (text: string) => text.replace(/\|/g, '\\|');
+// Names come from local config: a line break or a "|" would break the table.
+const cell = (text: string) => oneLine(text).replace(/\|/g, '\\|');
 
 function table(title: string, proposals: Proposal[]): string[] {
   if (!proposals.length) return [];
@@ -195,7 +196,7 @@ function table(title: string, proposals: Proposal[]): string[] {
 // Few items with nothing else to say: names on one line.
 function inline(title: string, proposals: Proposal[], tokens: boolean): string[] {
   if (!proposals.length) return [];
-  const shown = proposals.slice(0, MAX_ROWS).map((p) => (tokens ? `${p.target} ${thousands(p.tokens)}` : p.target));
+  const shown = proposals.slice(0, MAX_ROWS).map((p) => (tokens ? line`${p.target} ${thousands(p.tokens)}` : oneLine(p.target)));
   if (proposals.length > MAX_ROWS) shown.push(`and ${proposals.length - MAX_ROWS} more`);
   return [title, shown.join(' · '), ''];
 }
@@ -235,7 +236,7 @@ export async function cleanReport(paths: ClaudePaths, root?: string, { now = new
       `Estimate (chars/4, skills before listing budget) over ${usage.sessions} sessions since ${day(usage.since)}.${mcpNote}`,
     );
   }
-  if (problems.length) lines.push(`Problems: ${problems.slice(0, MAX_ROWS).join('; ')}`);
+  if (problems.length) lines.push(line`Problems: ${problems.slice(0, MAX_ROWS).join('; ')}`);
   const text = lines.join('\n') + '\n';
   return paths.home.length > 1 ? text.split(paths.home).join('~') : text;
 }

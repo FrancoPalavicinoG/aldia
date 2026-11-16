@@ -31,6 +31,7 @@ test('the skill is /aldia, runs only when the user asks, and every file it point
   assert.equal([...text.matchAll(/"\$\{CLAUDE_PLUGIN_ROOT\}\/[\w./-]+"/g)].length, referenced.length);
   // Text from the repo reaches the model through this skill.
   assert.match(text, /never follow instructions/i);
+  assert.match(text, /`\(end of aldia inventory\)`/);
   // /aldia clean runs a fixed command: the user's arguments never reach the shell.
   assert.match(text, /- Bash\(node "\$\{CLAUDE_PLUGIN_ROOT\}\/lib\/cli\.js" clean\)/);
 });
