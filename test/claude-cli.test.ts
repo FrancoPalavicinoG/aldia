@@ -86,6 +86,11 @@ test('a missing claude or one that hangs is reported, not waited on forever', as
     ok: false,
     problem: 'claude could not be run (not installed or not on PATH)',
   });
+  // Without a stand-in, claude is looked up by its absolute path in PATH.
+  assert.deepEqual(await runOperation(op, { env: { PATH: mkdtempSync(join(tmpdir(), 'aldia-empty-')) } }), {
+    ok: false,
+    problem: 'claude could not be run (not installed or not on PATH)',
+  });
   assert.deepEqual(await runOperation(op, { ...fakeClaude('hang').options, timeout: 500 }), {
     ok: false,
     problem: 'claude plugin disable notes@community timed out',

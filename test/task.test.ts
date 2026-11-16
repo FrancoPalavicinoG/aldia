@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
+import { delimiter } from 'node:path';
 import { join } from 'node:path';
 import { readTaskContext } from '../src/task.js';
 import { emptyDir, env, git, newRepo, witness } from './git-env.js';
@@ -154,4 +155,25 @@ test("a submodule's own config can't run commands", async () => {
   git(join(dir, 'sub'), 'config', 'core.fsmonitor', mark.command);
   await readTaskContext(dir, env);
   assert.equal(mark.ran(), false);
+});
+
+// Windows looks for a program in the folder it runs in before PATH: a git.exe committed at
+// the repo root would run. The stand-in is a copy of node that, told through NODE_OPTIONS
+// (which the real git ignores), leaves a mark.
+test('a git committed in the repo is never run: not at its root, nor in a PATH entry inside it', async () => {
+  const dir = newRepo();
+  const mark = witness();
+  const script = mark.command.split('" "')[1]!.replace(/"$/, '');
+  let testEnv: NodeJS.ProcessEnv;
+  if (process.platform === 'win32') {
+    copyFileSync(process.execPath, join(dir, 'git.exe'));
+    testEnv = { ...env, NODE_OPTIONS: `--require "${script}"` };
+  } else {
+    mkdirSync(join(dir, 'bin'));
+    writeFileSync(join(dir, 'bin', 'git'), `#!/bin/sh\n${mark.command}\n`, { mode: 0o755 });
+    testEnv = { ...env, PATH: [join(dir, 'bin'), process.env.PATH].join(delimiter) };
+  }
+  const context = await readTaskContext(dir, testEnv);
+  assert.equal(mark.ran(), false);
+  assert.equal(context.repo, true);
 });
