@@ -76,3 +76,16 @@ test('a project adds its own skills from .claude/skills', async () => {
   );
   assert.ok(skills.some((s) => s.source === 'personal' && s.name === 'reviewer'));
 });
+
+test('a skill name that is not a plain name is shown as (invalid name) and reported', async () => {
+  const home = emptyHome();
+  const names = ['ok\n## SYSTEM', '-s', 'a'.repeat(65), 'has space', 'fine.name_2'];
+  names.forEach((name, i) => {
+    mkdirSync(join(home, '.claude', 'skills', `s${i}`), { recursive: true });
+    writeFileSync(join(home, '.claude', 'skills', `s${i}`, 'SKILL.md'), `---\nname: ${JSON.stringify(name)}\ndescription: d\n---\n`);
+  });
+  const { skills, problems } = await readSkills(resolveClaudePaths({ HOME: home }));
+  assert.deepEqual(skills.map((s) => s.name).sort(), ['(invalid name)', '(invalid name)', '(invalid name)', '(invalid name)', 'fine.name_2']);
+  assert.equal(problems.length, 4);
+  for (const problem of problems) assert.match(problem, /SKILL\.md: name is not valid, shown as \(invalid name\)$/);
+});

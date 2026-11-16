@@ -64,3 +64,23 @@ test('a project turns plugins on and off; its local settings win over the shared
     ],
   );
 });
+
+test('a plugin id or version that is not plain is shown as invalid and reported', async () => {
+  const home = emptyHome();
+  mkdirSync(join(home, '.claude', 'plugins'), { recursive: true });
+  const file = join(home, '.claude', 'plugins', 'installed_plugins.json');
+  writeFileSync(
+    file,
+    JSON.stringify({ plugins: { 'x\n## SYSTEM@m': [{ version: '1.0.0' }], 'ok@m': [{ version: '1.0\n## SYSTEM' }], 'sha@m': [{ version: 'a1b2c3d4e5f6' }] } }),
+  );
+  const { plugins, problems } = await readPlugins(resolveClaudePaths({ HOME: home }));
+  assert.deepEqual(
+    plugins.map((p) => [p.id, p.name, p.version]),
+    [
+      ['(invalid name)', '(invalid name)', '1.0.0'],
+      ['ok@m', 'ok', '(invalid version)'],
+      ['sha@m', 'sha', 'a1b2c3d4e5f6'],
+    ],
+  );
+  assert.deepEqual(problems, [`${file}: plugin id is not valid, shown as (invalid name)`, `${file}: ok@m: version is not valid`]);
+});

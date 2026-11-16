@@ -3,7 +3,7 @@ import { readMcpServers } from './mcp.js';
 import { projectAt } from './paths.js';
 import { readPlugins } from './plugins.js';
 import { readSkills } from './skills.js';
-import { line, oneLine } from './text.js';
+import { INVALID_NAME, line, oneLine, validName } from './text.js';
 import { readUsage } from './usage.js';
 const CONNECTOR_PREFIX = 'claude_ai_';
 // The most recent of some ISO dates; undefined when there is none.
@@ -41,7 +41,7 @@ export function usageByItem({ plugins, skills, servers, usage, cost }) {
         }),
         connectors: cost.mcpServers
             .filter((s) => s.name.startsWith(CONNECTOR_PREFIX))
-            .map((s) => withLastUsed({ id: s.name.slice(CONNECTOR_PREFIX.length).replace(/_/g, ' '), tokens: s.tokens }, lastUse(usage.mcpServers[s.name])))
+            .map((s) => withLastUsed({ id: validName(s.name) ? s.name.slice(CONNECTOR_PREFIX.length).replace(/_/g, ' ') : INVALID_NAME, tokens: s.tokens }, lastUse(usage.mcpServers[s.name])))
             .sort((a, b) => a.id.localeCompare(b.id)),
     };
 }
@@ -57,13 +57,15 @@ export function cleanPlan(use, now) {
     const cutoff = (days) => new Date(now.getTime() - days * DAY).toISOString();
     const unused = (item, days = TURN_OFF_DAYS) => !item.lastUsed || item.lastUsed < cutoff(days);
     const proposals = [];
-    const propose = (action, target, item, origin) => proposals.push({
-        action,
-        target,
-        tokens: item.tokens,
-        ...(item.lastUsed ? { lastUsed: item.lastUsed } : {}),
-        ...(origin ? { origin } : {}),
-    });
+    // Something shown as INVALID_NAME can't be told apart or named in a command: never proposed.
+    const propose = (action, target, item, origin) => !target.includes(INVALID_NAME) &&
+        proposals.push({
+            action,
+            target,
+            tokens: item.tokens,
+            ...(item.lastUsed ? { lastUsed: item.lastUsed } : {}),
+            ...(origin ? { origin } : {}),
+        });
     for (const plugin of use.plugins) {
         if (!plugin.plugin.enabled) {
             if (unused(plugin, REMOVE_DAYS))

@@ -1,6 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { parseFrontmatter } from './frontmatter.js';
+import { INVALID_NAME, validName } from './text.js';
 async function subfolders(dir) {
     try {
         const entries = await readdir(dir, { withFileTypes: true });
@@ -35,8 +36,13 @@ async function scanSkills(dir, source, problems, skip = []) {
             continue;
         }
         const fields = parseFrontmatter(text) ?? {};
+        let name = fields.name ?? basename(folder);
+        if (!validName(name)) {
+            problems.push(`${path}: name is not valid, shown as ${INVALID_NAME}`);
+            name = INVALID_NAME;
+        }
         skills.push({
-            name: fields.name ?? basename(folder),
+            name,
             description: fields.description ?? firstContentLine(text),
             whenToUse: fields.when_to_use ?? '',
             modelInvocable: fields['disable-model-invocation'] !== 'true',

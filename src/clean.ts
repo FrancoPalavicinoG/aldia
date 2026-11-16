@@ -3,7 +3,7 @@ import { readMcpServers, type McpServer, type McpSource } from './mcp.js';
 import { projectAt, type ClaudePaths } from './paths.js';
 import { readPlugins, type InstalledPlugin } from './plugins.js';
 import { readSkills, type Skill, type SkillSource } from './skills.js';
-import { line, oneLine } from './text.js';
+import { INVALID_NAME, line, oneLine, validName } from './text.js';
 import { readUsage, type Usage, type UseCount } from './usage.js';
 
 export interface SetupData {
@@ -87,7 +87,7 @@ export function usageByItem({ plugins, skills, servers, usage, cost }: SetupData
       .filter((s) => s.name.startsWith(CONNECTOR_PREFIX))
       .map((s) =>
         withLastUsed(
-          { id: s.name.slice(CONNECTOR_PREFIX.length).replace(/_/g, ' '), tokens: s.tokens },
+          { id: validName(s.name) ? s.name.slice(CONNECTOR_PREFIX.length).replace(/_/g, ' ') : INVALID_NAME, tokens: s.tokens },
           lastUse(usage.mcpServers[s.name]),
         ),
       )
@@ -128,7 +128,9 @@ export function cleanPlan(use: SetupUse, now: Date): CleanPlan {
   const cutoff = (days: number) => new Date(now.getTime() - days * DAY).toISOString();
   const unused = (item: ItemUse, days = TURN_OFF_DAYS) => !item.lastUsed || item.lastUsed < cutoff(days);
   const proposals: Proposal[] = [];
+  // Something shown as INVALID_NAME can't be told apart or named in a command: never proposed.
   const propose = (action: CleanAction, target: string, item: ItemUse, origin?: SkillSource) =>
+    !target.includes(INVALID_NAME) &&
     proposals.push({
       action,
       target,

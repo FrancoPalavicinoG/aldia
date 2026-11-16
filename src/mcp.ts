@@ -2,6 +2,7 @@ import { basename, join, relative, resolve, isAbsolute } from 'node:path';
 import { readJson } from './json.js';
 import type { ClaudePaths, ProjectPaths } from './paths.js';
 import type { InstalledPlugin } from './plugins.js';
+import { INVALID_NAME, validName } from './text.js';
 
 export type McpSource = 'local' | 'project' | 'user' | 'plugin';
 
@@ -25,10 +26,14 @@ interface ServerConfig {
   command?: string;
 }
 
+// The transports Claude Code documents; any other type is shown as "other".
+const TRANSPORTS = new Set(['stdio', 'http', 'sse', 'ws']);
+
 // Server configs hold credentials in headers, env, args and URL queries. Only the
 // fields below are copied out; everything else is dropped here, on read.
 function describe(name: string, config: ServerConfig, source: McpSource): McpServer {
-  const transport = config.type ?? (config.url ? 'http' : 'stdio');
+  const type = config.type ?? (config.url ? 'http' : 'stdio');
+  const transport = TRANSPORTS.has(type) ? type : 'other';
   let target = '';
   if (config.url) {
     try {
@@ -42,9 +47,14 @@ function describe(name: string, config: ServerConfig, source: McpSource): McpSer
   return { name, transport, target, source };
 }
 
-function serversIn(map: unknown, source: McpSource): McpServer[] {
+// `file` is where the servers were declared, for problems.
+function serversIn(map: unknown, source: McpSource, file: string, problems: string[]): McpServer[] {
   if (!map || typeof map !== 'object') return [];
-  return Object.entries(map as Record<string, ServerConfig>).map(([name, config]) => describe(name, config ?? {}, source));
+  return Object.entries(map as Record<string, ServerConfig>).map(([name, config]) => {
+    if (validName(name)) return describe(name, config ?? {}, source);
+    problems.push(`${file}: MCP server name is not valid, shown as ${INVALID_NAME}`);
+    return describe(INVALID_NAME, config ?? {}, source);
+  });
 }
 
 // A server file may wrap its servers in "mcpServers" or list them at the top level.
@@ -95,18 +105,18 @@ export async function readMcpServers(
   const problems: string[] = [];
   const state = (await readJson(paths.globalState, problems)) as GlobalState | undefined;
   const scoped = [
-    ...(project ? serversIn(state?.projects?.[project.root]?.mcpServers, 'local') : []),
-    ...(project ? serversIn(unwrap(await readJson(project.mcpJson, problems)), 'project') : []),
-    ...serversIn(state?.mcpServers, 'user'),
+    ...(project ? serversIn(state?.projects?.[project.root]?.mcpServers, 'local', paths.globalState, problems) : []),
+    ...(project ? serversIn(unwrap(await readJson(project.mcpJson, problems)), 'project', project.mcpJson, problems) : []),
+    ...serversIn(state?.mcpServers, 'user', paths.globalState, problems),
   ];
   const names = new Set<string>();
-  const servers = scoped.filter((server) => !names.has(server.name) && names.add(server.name));
+  const servers = scoped.filter((server) => server.name === INVALID_NAME || (!names.has(server.name) && names.add(server.name)));
 
   const seen = new Set<string>();
   for (const plugin of plugins) {
     if (!plugin.installPath || seen.has(plugin.installPath)) continue;
     seen.add(plugin.installPath);
-    for (const server of serversIn(await pluginServerMap(plugin.installPath, problems), 'plugin')) {
+    for (const server of serversIn(await pluginServerMap(plugin.installPath, problems), 'plugin', plugin.installPath, problems)) {
       servers.push({ ...server, pluginId: plugin.id });
     }
   }

@@ -1,5 +1,6 @@
 import { readJson } from './json.js';
 import type { ClaudePaths, ProjectPaths } from './paths.js';
+import { INVALID_NAME, INVALID_VERSION, validName, validVersion } from './text.js';
 
 export interface InstalledPlugin {
   id: string;
@@ -27,6 +28,12 @@ function splitId(id: string): { name: string; marketplace: string } {
   return at > 0 ? { name: id.slice(0, at), marketplace: id.slice(at + 1) } : { name: id, marketplace: '' };
 }
 
+// name@marketplace, each part a plain name.
+function validId(id: string): boolean {
+  const { name, marketplace } = splitId(id);
+  return validName(name) && validName(marketplace);
+}
+
 type Settings = { enabledPlugins?: Record<string, boolean> } | undefined;
 
 // With a project, `enabled` is the value in effect there: the project's shared settings
@@ -39,14 +46,22 @@ export async function readPlugins(paths: ClaudePaths, project?: ProjectPaths): P
   for (const file of layers) Object.assign(enabled, ((await readJson(file, problems)) as Settings)?.enabledPlugins);
 
   const plugins: InstalledPlugin[] = [];
-  for (const [id, records] of Object.entries(installed?.plugins ?? {})) {
+  for (const [key, records] of Object.entries(installed?.plugins ?? {})) {
+    const valid = validId(key);
+    if (!valid) problems.push(`${paths.installedPlugins}: plugin id is not valid, shown as ${INVALID_NAME}`);
+    const id = valid ? key : INVALID_NAME;
     for (const record of records) {
+      let version = record.version ?? 'unknown';
+      if (!validVersion(version)) {
+        problems.push(`${paths.installedPlugins}: ${id}: version is not valid`);
+        version = INVALID_VERSION;
+      }
       plugins.push({
         id,
-        ...splitId(id),
-        version: record.version ?? 'unknown',
+        ...(valid ? splitId(id) : { name: INVALID_NAME, marketplace: INVALID_NAME }),
+        version,
         scope: record.scope ?? 'user',
-        enabled: enabled[id] === true,
+        enabled: valid && enabled[id] === true,
         installPath: record.installPath ?? '',
       });
     }

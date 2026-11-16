@@ -25,3 +25,15 @@ export function short(text: string, max = MAX_TEXT): string {
 export function line(parts: TemplateStringsArray, ...values: unknown[]): string {
   return parts.reduce((text, part, i) => text + oneLine(String(values[i - 1])) + part);
 }
+
+// A name (skill, MCP server, plugin, marketplace): starts with a letter or digit, so it
+// can never pass as an option ("-s"), and holds no space or markup. One that doesn't fit
+// is shown as INVALID_NAME, and nothing is ever proposed for it.
+export const NAME = '[A-Za-z0-9][A-Za-z0-9._-]{0,63}';
+const PLAIN_NAME = new RegExp(`^${NAME}$`);
+const PLAIN_VERSION = /^[A-Za-z0-9][A-Za-z0-9.+_-]{0,63}$/;
+export const INVALID_NAME = '(invalid name)';
+export const INVALID_VERSION = '(invalid version)';
+
+export const validName = (text: string) => PLAIN_NAME.test(text);
+export const validVersion = (text: string) => PLAIN_VERSION.test(text);
