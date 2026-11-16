@@ -158,22 +158,22 @@ test("a submodule's own config can't run commands", async () => {
 });
 
 // Windows looks for a program in the folder it runs in before PATH: a git.exe committed at
-// the repo root would run. The stand-in is a copy of node that, told through NODE_OPTIONS
-// (which the real git ignores), leaves a mark.
+// the repo root would run. The stand-in there is a copy of node: it can't read git's
+// arguments, so if it ran instead of git the folder wouldn't be seen as a repo. Elsewhere
+// a bin/git in the repo, put on PATH (as direnv does), leaves a mark if it runs.
 test('a git committed in the repo is never run: not at its root, nor in a PATH entry inside it', async () => {
   const dir = newRepo();
   const mark = witness();
-  const script = mark.command.split('" "')[1]!.replace(/"$/, '');
   let testEnv: NodeJS.ProcessEnv;
   if (process.platform === 'win32') {
     copyFileSync(process.execPath, join(dir, 'git.exe'));
-    testEnv = { ...env, NODE_OPTIONS: `--require "${script}"` };
+    testEnv = env;
   } else {
     mkdirSync(join(dir, 'bin'));
     writeFileSync(join(dir, 'bin', 'git'), `#!/bin/sh\n${mark.command}\n`, { mode: 0o755 });
     testEnv = { ...env, PATH: [join(dir, 'bin'), process.env.PATH].join(delimiter) };
   }
   const context = await readTaskContext(dir, testEnv);
-  assert.equal(mark.ran(), false);
-  assert.equal(context.repo, true);
+  assert.equal(mark.ran(), false, 'the repo\'s git ran');
+  assert.equal(context.repo, true, 'the repo\'s git ran instead of git');
 });

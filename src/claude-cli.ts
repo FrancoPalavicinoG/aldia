@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { findProgram } from './programs.js';
 
 const run = promisify(execFile);
 
@@ -43,7 +44,7 @@ export interface RunOptions {
   // The project folder: required for local scope, which belongs to it.
   cwd?: string;
   env?: NodeJS.ProcessEnv;
-  // How to start the CLI; tests point it at a stand-in.
+  // How to start the CLI; tests point it at a stand-in. By default, claude's absolute path.
   claude?: string[];
   timeout?: number;
 }
@@ -77,12 +78,19 @@ function cliResult(stdout: string): CliResult | undefined {
 export async function runOperation(op: Operation, options: RunOptions = {}): Promise<RunResult> {
   const args = commandFor(op);
   check(op.scope !== 'local' || !!options.cwd, 'local scope needs the project folder');
-  const [bin = 'claude', ...prefix] = options.claude ?? ['claude'];
+  const env = options.env ?? process.env;
+  let command = options.claude;
+  if (!command) {
+    const found = findProgram('claude', env, options.cwd ? [options.cwd] : []);
+    if (!found.path) return { ok: false, problem: found.problem ?? 'claude could not be run (not installed or not on PATH)' };
+    command = [found.path];
+  }
+  const [bin = 'claude', ...prefix] = command;
   const what = `claude ${args.slice(0, 3).join(' ')}`;
   try {
     await run(bin, [...prefix, ...args], {
       ...(options.cwd ? { cwd: options.cwd } : {}),
-      env: options.env ?? process.env,
+      env,
       timeout: options.timeout ?? 60_000,
       encoding: 'utf8',
     });

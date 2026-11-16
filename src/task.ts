@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { findProgram } from './programs.js';
 
 const run = promisify(execFile);
 
@@ -63,10 +64,10 @@ type GitResult = { ok: true; stdout: string } | { ok: false; exitCode?: number }
 
 // Runs a read-only git command with a fixed argument list and no shell, so nothing from
 // the repo can become part of a command. --no-optional-locks: git doesn't rewrite the
-// index. git missing from PATH throws.
-async function git(root: string, env: NodeJS.ProcessEnv, ...args: string[]): Promise<GitResult> {
+// index. `bin` is git's absolute path (see findProgram).
+async function git(bin: string, root: string, env: NodeJS.ProcessEnv, ...args: string[]): Promise<GitResult> {
   try {
-    const { stdout } = await run('git', ['--no-pager', '--no-optional-locks', ...args], {
+    const { stdout } = await run(bin, ['--no-pager', '--no-optional-locks', ...args], {
       cwd: root,
       env,
       timeout: 5000,
@@ -75,7 +76,6 @@ async function git(root: string, env: NodeJS.ProcessEnv, ...args: string[]): Pro
     return { ok: true, stdout };
   } catch (error) {
     const failure = error as NodeJS.ErrnoException & { code?: string | number };
-    if (failure.code === 'ENOENT') throw error;
     return typeof failure.code === 'number' ? { ok: false, exitCode: failure.code } : { ok: false };
   }
 }
@@ -84,8 +84,8 @@ const output = (result: GitResult) => (result.ok ? result.stdout : undefined);
 
 // Every filter the repo's config names, turned off. Names come NUL-separated (-z), so no
 // name can pass for two. Undefined when they can't be read: then status must not run.
-async function filtersOff(root: string, env: NodeJS.ProcessEnv): Promise<[string, string][] | undefined> {
-  const result = await git(root, env, 'config', '-z', '--name-only', '--get-regexp', '^filter\\.');
+async function filtersOff(bin: string, root: string, env: NodeJS.ProcessEnv): Promise<[string, string][] | undefined> {
+  const result = await git(bin, root, env, 'config', '-z', '--name-only', '--get-regexp', '^filter\\.');
   // Exit 1: no filter at all.
   if (!result.ok) return result.exitCode === 1 ? [] : undefined;
   const names = new Set(
@@ -106,30 +106,29 @@ export async function readTaskContext(root: string, env: NodeJS.ProcessEnv = pro
   const context: TaskContext = { repo: false, recentCommits: [], changedFiles: [], changedTotal: 0, problems: [] };
   const safe = withConfig(env, SAFE_CONFIG);
 
-  let inside: GitResult;
-  try {
-    inside = await git(root, safe, 'rev-parse', '--is-inside-work-tree');
-  } catch {
+  const bin = findProgram('git', env, [root]).path;
+  if (!bin) {
     context.problems.push('git could not be run (not installed or not on PATH)');
     return context;
   }
+  const inside = await git(bin, root, safe, 'rev-parse', '--is-inside-work-tree');
   if (output(inside)?.trim() !== 'true') return context;
   context.repo = true;
 
-  const branch = output(await git(root, safe, 'symbolic-ref', '-q', '--short', 'HEAD'))?.trim();
+  const branch = output(await git(bin, root, safe, 'symbolic-ref', '-q', '--short', 'HEAD'))?.trim();
   if (branch) context.branch = branch;
 
   // --no-show-signature: a user setting could otherwise mix signature output into the list
   // and run the signature program.
-  const log = output(await git(root, safe, 'log', `-${MAX_COMMITS}`, '--no-show-signature', '--format=%s'));
+  const log = output(await git(bin, root, safe, 'log', `-${MAX_COMMITS}`, '--no-show-signature', '--format=%s'));
   context.recentCommits = log ? log.split('\n').filter(Boolean) : [];
 
-  const filters = await filtersOff(root, safe);
+  const filters = await filtersOff(bin, root, safe);
   if (!filters) {
     context.problems.push("git filters couldn't be read; uncommitted changes not checked");
     return context;
   }
-  const status = await git(root, withConfig(safe, filters), 'status', '--porcelain', '-z', '--ignore-submodules=all');
+  const status = await git(bin, root, withConfig(safe, filters), 'status', '--porcelain', '-z', '--ignore-submodules=all');
   const changed = changedPaths(output(status) ?? '');
   context.changedFiles = changed.slice(0, MAX_CHANGED);
   context.changedTotal = changed.length;
