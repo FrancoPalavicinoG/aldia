@@ -33,6 +33,12 @@ const SAFE_CONFIG = [
     ['core.hooksPath', NO_HOOKS],
     ['safe.bareRepository', 'explicit'],
 ];
+// A partial clone fetches the objects it lacks when a command needs them, through the ssh
+// command or the remote program the repo's config names. Two barriers, each enough alone:
+// no fetching of missing objects (git 2.45 and later), and no transport allowed at all,
+// which wins over the repo's own protocol settings on every version. And git never stops
+// to ask for a password.
+const NO_NETWORK = { GIT_NO_LAZY_FETCH: '1', GIT_ALLOW_PROTOCOL: '', GIT_TERMINAL_PROMPT: '0' };
 function withConfig(env, settings) {
     const start = Number(env.GIT_CONFIG_COUNT) || 0;
     const added = { GIT_CONFIG_COUNT: String(start + settings.length) };
@@ -81,7 +87,7 @@ async function filtersOff(bin, root, env) {
 }
 export async function readTaskContext(root, env = process.env) {
     const context = { repo: false, recentCommits: [], changedFiles: [], changedTotal: 0, changesChecked: false, problems: [] };
-    const safe = withConfig(env, SAFE_CONFIG);
+    const safe = { ...withConfig(env, SAFE_CONFIG), ...NO_NETWORK };
     const bin = findProgram('git', env, [root]).path;
     if (!bin) {
         context.problems.push('git could not be run (not installed or not on PATH)');
