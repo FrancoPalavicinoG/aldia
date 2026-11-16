@@ -84,3 +84,26 @@ test('a plugin id or version that is not plain is shown as invalid and reported'
   );
   assert.deepEqual(problems, [`${file}: plugin id is not valid, shown as (invalid name)`, `${file}: ok@m: version is not valid`]);
 });
+
+test('install records of an unexpected shape are problems, never a crash', async () => {
+  const home = emptyHome();
+  mkdirSync(join(home, '.claude', 'plugins'), { recursive: true });
+  const file = join(home, '.claude', 'plugins', 'installed_plugins.json');
+  writeFileSync(join(home, '.claude', 'settings.json'), '{"enabledPlugins":{"a@m":"yes","b@m":true}}');
+  writeFileSync(file, JSON.stringify({ plugins: { 'a@m': { version: '1.0.0' }, 'b@m': [{ version: 2, installPath: 5, scope: [] }, 'x'] } }));
+  const { plugins, problems } = await readPlugins(resolveClaudePaths({ HOME: home }));
+  assert.deepEqual(
+    plugins.map((p) => [p.id, p.version, p.installPath, p.scope, p.enabled]),
+    [['b@m', 'unknown', '', 'user', true]],
+  );
+  assert.deepEqual(problems, [
+    `${file}: a@m: install records are not a list`,
+    `${file}: b@m: version is not text`,
+    `${file}: b@m: scope is not text`,
+    `${file}: b@m: installPath is not text`,
+    `${file}: b@m: an install record is not an object`,
+  ]);
+
+  writeFileSync(file, '{"plugins": "all"}');
+  assert.deepEqual(await readPlugins(resolveClaudePaths({ HOME: home })), { plugins: [], problems: [`${file}: plugins is not an object`] });
+});

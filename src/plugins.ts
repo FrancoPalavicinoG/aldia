@@ -1,4 +1,4 @@
-import { readJson } from './json.js';
+import { isObject, readJson, textField } from './json.js';
 import type { ClaudePaths, ProjectPaths } from './paths.js';
 import { INVALID_NAME, INVALID_VERSION, validName, validVersion } from './text.js';
 
@@ -17,12 +17,6 @@ export interface PluginInventory {
   problems: string[];
 }
 
-interface InstallRecord {
-  scope?: string;
-  version?: string;
-  installPath?: string;
-}
-
 function splitId(id: string): { name: string; marketplace: string } {
   const at = id.lastIndexOf('@');
   return at > 0 ? { name: id.slice(0, at), marketplace: id.slice(at + 1) } : { name: id, marketplace: '' };
@@ -34,35 +28,50 @@ function validId(id: string): boolean {
   return validName(name) && validName(marketplace);
 }
 
-type Settings = { enabledPlugins?: Record<string, boolean> } | undefined;
-
 // With a project, `enabled` is the value in effect there: the project's shared settings
 // override the user's, and its local settings override both, plugin by plugin.
 export async function readPlugins(paths: ClaudePaths, project?: ProjectPaths): Promise<PluginInventory> {
   const problems: string[] = [];
-  const installed = (await readJson(paths.installedPlugins, problems)) as { plugins?: Record<string, InstallRecord[]> } | undefined;
+  const file = paths.installedPlugins;
+  const installed = await readJson(file, problems);
   const layers = project ? [paths.settings, project.settings, project.localSettings] : [paths.settings];
+  // Only true and false count; any other value is not a setting.
   const enabled: Record<string, boolean> = {};
-  for (const file of layers) Object.assign(enabled, ((await readJson(file, problems)) as Settings)?.enabledPlugins);
+  for (const layer of layers) {
+    const settings = await readJson(layer, problems);
+    const map = isObject(settings) && isObject(settings.enabledPlugins) ? settings.enabledPlugins : {};
+    for (const [id, on] of Object.entries(map)) if (typeof on === 'boolean') enabled[id] = on;
+  }
 
   const plugins: InstalledPlugin[] = [];
-  for (const [key, records] of Object.entries(installed?.plugins ?? {})) {
+  const all = isObject(installed) ? installed.plugins : undefined;
+  if (all !== undefined && !isObject(all)) problems.push(`${file}: plugins is not an object`);
+  for (const [key, records] of Object.entries(isObject(all) ? all : {})) {
     const valid = validId(key);
-    if (!valid) problems.push(`${paths.installedPlugins}: plugin id is not valid, shown as ${INVALID_NAME}`);
+    if (!valid) problems.push(`${file}: plugin id is not valid, shown as ${INVALID_NAME}`);
     const id = valid ? key : INVALID_NAME;
+    if (!Array.isArray(records)) {
+      problems.push(`${file}: ${id}: install records are not a list`);
+      continue;
+    }
     for (const record of records) {
-      let version = record.version ?? 'unknown';
+      if (!isObject(record)) {
+        problems.push(`${file}: ${id}: an install record is not an object`);
+        continue;
+      }
+      const where = `${file}: ${id}`;
+      let version = textField(record, 'version', where, problems) ?? 'unknown';
       if (!validVersion(version)) {
-        problems.push(`${paths.installedPlugins}: ${id}: version is not valid`);
+        problems.push(`${where}: version is not valid`);
         version = INVALID_VERSION;
       }
       plugins.push({
         id,
         ...(valid ? splitId(id) : { name: INVALID_NAME, marketplace: INVALID_NAME }),
         version,
-        scope: record.scope ?? 'user',
+        scope: textField(record, 'scope', where, problems) ?? 'user',
         enabled: valid && enabled[id] === true,
-        installPath: record.installPath ?? '',
+        installPath: textField(record, 'installPath', where, problems) ?? '',
       });
     }
   }

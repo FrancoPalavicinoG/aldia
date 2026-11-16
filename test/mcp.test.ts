@@ -123,3 +123,24 @@ test('a server name that is not a plain name is shown as (invalid name); an unkn
   );
   assert.deepEqual(problems, [`${join(home, '.claude.json')}: MCP server name is not valid, shown as (invalid name)`]);
 });
+
+test('a field of an unexpected type is a problem, and the server is still listed', async () => {
+  const home = emptyHome();
+  const file = join(home, '.claude.json');
+  writeFileSync(file, JSON.stringify({ mcpServers: { a: { command: 5 }, b: { type: { x: 1 }, url: 7 }, c: 'not an object' } }));
+  const { servers, problems } = await readMcpServers(resolveClaudePaths({ HOME: home }));
+  assert.deepEqual(
+    servers.map((s) => [s.name, s.transport, s.target]),
+    [
+      ['a', 'stdio', ''],
+      ['b', 'stdio', ''],
+      ['c', 'stdio', ''],
+    ],
+  );
+  assert.deepEqual(problems, [
+    `${file}: MCP server a: command is not text`,
+    `${file}: MCP server b: type is not text`,
+    `${file}: MCP server b: url is not text`,
+    `${file}: MCP server c: not an object`,
+  ]);
+});

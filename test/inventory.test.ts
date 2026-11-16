@@ -31,7 +31,7 @@ test('the inventory lists plugins, skills by origin, MCP servers and problems', 
 test('paths in problems start at ~, and secrets never appear', async () => {
   const home = fixture('home-basic');
   const report = await inventoryReport(resolveClaudePaths({ HOME: home }));
-  assert.match(report, /- ~[\\/]\.claude[\\/]skills[\\/]broken[\\/]SKILL\.md: could not be read/);
+  assert.match(report, /- ~[\\/]\.claude[\\/]skills[\\/]broken[\\/]SKILL\.md: not a file/);
   assert.ok(!report.includes(home));
   assert.ok(!/FAKE-SECRET|Bearer/.test(report));
 });
@@ -150,4 +150,11 @@ test('names, versions, paths and commits never add a line or hidden text to the 
   );
   for (const l of report.split('\n')) assert.ok(!HIDDEN.test(l.replace(/\n/g, '')), JSON.stringify(l));
   assert.ok(report.endsWith('(end of aldia inventory)\n'), report);
+});
+
+test('a config file too big to read is a problem, not a stall', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'aldia-home-'));
+  writeFileSync(join(home, '.claude.json'), `{"x":"${'x'.repeat(32 * 1024 * 1024)}"}`);
+  const report = await inventoryReport(resolveClaudePaths({ HOME: home }));
+  assert.ok(report.includes('- ~/.claude.json: too big to read (over 32 MB)') || report.includes('- ~\\.claude.json: too big to read (over 32 MB)'), report);
 });

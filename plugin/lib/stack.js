@@ -1,6 +1,6 @@
-import { access, readdir, readFile } from 'node:fs/promises';
+import { access, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { readJson } from './json.js';
+import { readJson, readText } from './json.js';
 // npm package name → framework id.
 const NODE_FRAMEWORKS = {
     next: 'next',
@@ -55,16 +55,6 @@ const NODE_LOCKFILES = [
     ['bun.lockb', 'bun'],
     ['package-lock.json', 'npm'],
 ];
-async function readText(path) {
-    try {
-        return await readFile(path, 'utf8');
-    }
-    catch (error) {
-        if (error.code === 'ENOENT')
-            return undefined;
-        throw error;
-    }
-}
 async function exists(path) {
     try {
         await access(path);
@@ -148,7 +138,7 @@ async function detectPython(folder, profile) {
         ['requirements.txt', requirementNames],
     ];
     for (const [file, names] of sources) {
-        const text = await readText(join(folder.path, file));
+        const text = await readText(join(folder.path, file), profile.problems);
         if (text === undefined)
             continue;
         profile.add('languages', 'python', at(folder, file));
@@ -164,7 +154,7 @@ async function detectOthers(folder, profile) {
         if (await exists(join(folder.path, file)))
             profile.add('languages', language, at(folder, file));
     }
-    const gemfile = await readText(join(folder.path, 'Gemfile'));
+    const gemfile = await readText(join(folder.path, 'Gemfile'), profile.problems);
     if (gemfile && /^\s*gem\s+["']rails["']/m.test(gemfile))
         profile.add('frameworks', 'rails', at(folder, 'Gemfile'));
     for (const [path, tool] of TOOL_FILES) {

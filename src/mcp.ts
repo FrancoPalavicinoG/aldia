@@ -1,5 +1,5 @@
 import { basename, join, relative, resolve, isAbsolute } from 'node:path';
-import { readJson } from './json.js';
+import { isObject, readJson, textField } from './json.js';
 import type { ClaudePaths, ProjectPaths } from './paths.js';
 import type { InstalledPlugin } from './plugins.js';
 import { INVALID_NAME, validName } from './text.js';
@@ -20,29 +20,28 @@ export interface McpInventory {
   problems: string[];
 }
 
-interface ServerConfig {
-  type?: string;
-  url?: string;
-  command?: string;
-}
-
 // The transports Claude Code documents; any other type is shown as "other".
 const TRANSPORTS = new Set(['stdio', 'http', 'sse', 'ws']);
 
 // Server configs hold credentials in headers, env, args and URL queries. Only the
 // fields below are copied out; everything else is dropped here, on read.
-function describe(name: string, config: ServerConfig, source: McpSource): McpServer {
-  const type = config.type ?? (config.url ? 'http' : 'stdio');
-  const transport = TRANSPORTS.has(type) ? type : 'other';
+// A field of another type is a problem, and the server is still listed without it.
+function describe(name: string, config: unknown, source: McpSource, file: string, problems: string[]): McpServer {
+  const where = `${file}: MCP server ${name}`;
+  if (!isObject(config)) problems.push(`${where}: not an object`);
+  const fields = isObject(config) ? config : {};
+  const [type, url, command] = ['type', 'url', 'command'].map((field) => textField(fields, field, where, problems));
+  const declared = type ?? (url ? 'http' : 'stdio');
+  const transport = TRANSPORTS.has(declared) ? declared : 'other';
   let target = '';
-  if (config.url) {
+  if (url) {
     try {
-      target = new URL(config.url).host;
+      target = new URL(url).host;
     } catch {
       target = 'unknown';
     }
-  } else if (config.command) {
-    target = basename(config.command);
+  } else if (command) {
+    target = basename(command);
   }
   return { name, transport, target, source };
 }
@@ -50,10 +49,10 @@ function describe(name: string, config: ServerConfig, source: McpSource): McpSer
 // `file` is where the servers were declared, for problems.
 function serversIn(map: unknown, source: McpSource, file: string, problems: string[]): McpServer[] {
   if (!map || typeof map !== 'object') return [];
-  return Object.entries(map as Record<string, ServerConfig>).map(([name, config]) => {
-    if (validName(name)) return describe(name, config ?? {}, source);
+  return Object.entries(map).map(([name, config]) => {
+    if (validName(name)) return describe(name, config, source, file, problems);
     problems.push(`${file}: MCP server name is not valid, shown as ${INVALID_NAME}`);
-    return describe(INVALID_NAME, config ?? {}, source);
+    return describe(INVALID_NAME, config, source, file, problems);
   });
 }
 

@@ -1,6 +1,7 @@
-import { readdir, readFile } from 'node:fs/promises';
+import { readdir } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { parseFrontmatter } from './frontmatter.js';
+import { readText } from './json.js';
 import { INVALID_NAME, validName } from './text.js';
 async function subfolders(dir) {
     try {
@@ -25,16 +26,9 @@ async function scanSkills(dir, source, problems, skip = []) {
         if (skip.includes(basename(folder)))
             continue;
         const path = join(folder, 'SKILL.md');
-        let text;
-        try {
-            text = await readFile(path, 'utf8');
-        }
-        catch (error) {
-            if (error.code === 'ENOENT')
-                continue;
-            problems.push(`${path}: could not be read`);
+        const text = await readText(path, problems);
+        if (text === undefined)
             continue;
-        }
         const fields = parseFrontmatter(text) ?? {};
         let name = fields.name ?? basename(folder);
         if (!validName(name)) {

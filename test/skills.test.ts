@@ -89,3 +89,14 @@ test('a skill name that is not a plain name is shown as (invalid name) and repor
   assert.equal(problems.length, 4);
   for (const problem of problems) assert.match(problem, /SKILL\.md: name is not valid, shown as \(invalid name\)$/);
 });
+
+test('a SKILL.md that is too big to read is a problem', async () => {
+  const home = emptyHome();
+  mkdirSync(join(home, '.claude', 'skills', 'big'), { recursive: true });
+  const path = join(home, '.claude', 'skills', 'big', 'SKILL.md');
+  writeFileSync(path, `---\nname: big\n---\n${'x'.repeat(1024 * 1024)}`);
+  assert.deepEqual(await readSkills(resolveClaudePaths({ HOME: home })), {
+    skills: [],
+    problems: [`${path}: too big to read (over 1 MB)`],
+  });
+});

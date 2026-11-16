@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseFrontmatter } from '../src/frontmatter.js';
@@ -69,4 +70,20 @@ test('the compiled command prints the clean proposal', () => {
     encoding: 'utf8',
   });
   assert.match(output, /^aldia clean/);
+});
+
+// A folder it can't list is not a case aldia handles: it stops with one fixed line, so no
+// stack trace with paths of the machine reaches the model.
+test('an error the command does not expect ends in one fixed line', { skip: process.platform === 'win32' || process.getuid?.() === 0 }, () => {
+  const home = mkdtempSync(join(tmpdir(), 'aldia-home-'));
+  mkdirSync(join(home, '.claude', 'skills'), { recursive: true });
+  chmodSync(join(home, '.claude', 'skills'), 0o000);
+  try {
+    const result = spawnSync(process.execPath, [join(plugin, 'lib', 'cli.js'), 'status'], { env: { HOME: home }, encoding: 'utf8' });
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, 'aldia could not finish: unexpected error (EACCES). Nothing was changed.\n');
+    assert.equal(result.stderr, '');
+  } finally {
+    chmodSync(join(home, '.claude', 'skills'), 0o700);
+  }
 });
