@@ -19,6 +19,15 @@ test('the marketplace lists the plugin folder, whose manifest names aldia with a
   assert.match(manifest.version, /^\d+\.\d+\.\d+$/);
 });
 
+// Claude Code keeps users on the plugin.json version until it changes: the package and
+// its lockfile say the same, so there is one version to raise.
+test('the plugin, the package and its lockfile have one version', () => {
+  const manifest = readJsonFile(join(plugin, '.claude-plugin', 'plugin.json'));
+  const pkg = readJsonFile(join(repo, 'package.json'));
+  const lock = readJsonFile(join(repo, 'package-lock.json'));
+  assert.deepEqual([pkg.version, lock.version, lock.packages[''].version], [manifest.version, manifest.version, manifest.version]);
+});
+
 test('the skill is /aldia, runs only when the user asks, and every file it points to ships', () => {
   const text = readFileSync(join(plugin, 'skills', 'aldia', 'SKILL.md'), 'utf8');
   const fields = parseFrontmatter(text);
