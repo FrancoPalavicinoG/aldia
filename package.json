@@ -9,8 +9,8 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
-    "test": "npm run build && tsc && node --test \"dist/test/**/*.test.js\""
+    "build": "node -e \"const fs = require('node:fs'); for (const f of fs.readdirSync('plugin/lib')) if (f.endsWith('.js')) fs.rmSync('plugin/lib/' + f)\" && tsc -p tsconfig.build.json",
+    "test": "npm run build && node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc && node --test \"dist/test/**/*.test.js\""
   },
   "devDependencies": {
     "@types/node": "22.20.5",
