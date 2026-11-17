@@ -3,6 +3,7 @@ import { readMcpServers } from './mcp.js';
 import { projectAt } from './paths.js';
 import { readPlugins } from './plugins.js';
 import { readSkills } from './skills.js';
+import { INVALID_NAME, line, oneLine, validName } from './text.js';
 import { readUsage } from './usage.js';
 const CONNECTOR_PREFIX = 'claude_ai_';
 // The most recent of some ISO dates; undefined when there is none.
@@ -40,7 +41,7 @@ export function usageByItem({ plugins, skills, servers, usage, cost }) {
         }),
         connectors: cost.mcpServers
             .filter((s) => s.name.startsWith(CONNECTOR_PREFIX))
-            .map((s) => withLastUsed({ id: s.name.slice(CONNECTOR_PREFIX.length).replace(/_/g, ' '), tokens: s.tokens }, lastUse(usage.mcpServers[s.name])))
+            .map((s) => withLastUsed({ id: validName(s.name) ? s.name.slice(CONNECTOR_PREFIX.length).replace(/_/g, ' ') : INVALID_NAME, tokens: s.tokens }, lastUse(usage.mcpServers[s.name])))
             .sort((a, b) => a.id.localeCompare(b.id)),
     };
 }
@@ -56,13 +57,15 @@ export function cleanPlan(use, now) {
     const cutoff = (days) => new Date(now.getTime() - days * DAY).toISOString();
     const unused = (item, days = TURN_OFF_DAYS) => !item.lastUsed || item.lastUsed < cutoff(days);
     const proposals = [];
-    const propose = (action, target, item, origin) => proposals.push({
-        action,
-        target,
-        tokens: item.tokens,
-        ...(item.lastUsed ? { lastUsed: item.lastUsed } : {}),
-        ...(origin ? { origin } : {}),
-    });
+    // Something shown as INVALID_NAME can't be told apart or named in a command: never proposed.
+    const propose = (action, target, item, origin) => !target.includes(INVALID_NAME) &&
+        proposals.push({
+            action,
+            target,
+            tokens: item.tokens,
+            ...(item.lastUsed ? { lastUsed: item.lastUsed } : {}),
+            ...(origin ? { origin } : {}),
+        });
     for (const plugin of use.plugins) {
         if (!plugin.plugin.enabled) {
             if (unused(plugin, REMOVE_DAYS))
@@ -111,8 +114,8 @@ const ACTION_ORIGIN = {
 const day = (iso) => iso.slice(0, 10);
 const thousands = (n) => n.toLocaleString('en-US');
 const total = (proposals) => proposals.reduce((sum, p) => sum + p.tokens, 0);
-// Names come from local config: a "|" would break the table.
-const cell = (text) => text.replace(/\|/g, '\\|');
+// Names come from local config: a line break or a "|" would break the table.
+const cell = (text) => oneLine(text).replace(/\|/g, '\\|');
 function table(title, proposals) {
     if (!proposals.length)
         return [];
@@ -128,7 +131,7 @@ function table(title, proposals) {
 function inline(title, proposals, tokens) {
     if (!proposals.length)
         return [];
-    const shown = proposals.slice(0, MAX_ROWS).map((p) => (tokens ? `${p.target} ${thousands(p.tokens)}` : p.target));
+    const shown = proposals.slice(0, MAX_ROWS).map((p) => (tokens ? line `${p.target} ${thousands(p.tokens)}` : oneLine(p.target)));
     if (proposals.length > MAX_ROWS)
         shown.push(`and ${proposals.length - MAX_ROWS} more`);
     return [title, shown.join(' · '), ''];
@@ -157,7 +160,7 @@ export async function cleanReport(paths, root, { now = new Date() } = {}) {
         lines.push(`Possible saving: ~${thousands(plan.savings)} tokens per request`, '', ...table('Turn off', of('disable-plugin', 'skill-off', 'disable-mcp')), ...inline(`claude.ai connectors · turned off in Claude Code only · ~${thousands(total(connectors))} tok`, connectors, true), ...inline(`Uninstall · off and unused for ${REMOVE_DAYS} days`, of('uninstall-plugin'), false), `Rule: unused for ${TURN_OFF_DAYS} days → turn off; off and unused for ${REMOVE_DAYS} → uninstall.`, `Estimate (chars/4, skills before listing budget) over ${usage.sessions} sessions since ${day(usage.since)}.${mcpNote}`);
     }
     if (problems.length)
-        lines.push(`Problems: ${problems.slice(0, MAX_ROWS).join('; ')}`);
+        lines.push(line `Problems: ${problems.slice(0, MAX_ROWS).join('; ')}`);
     const text = lines.join('\n') + '\n';
     return paths.home.length > 1 ? text.split(paths.home).join('~') : text;
 }

@@ -105,3 +105,64 @@ test('project servers from .mcp.json and local ones from .claude.json; on a name
   const output = JSON.stringify(result);
   for (const secret of ['FAKE-SECRET', 'Bearer']) assert.ok(!output.includes(secret), `output leaks ${secret}`);
 });
+
+test('a server name that is not a plain name is shown as (invalid name); an unknown transport as other', async () => {
+  const home = emptyHome();
+  writeFileSync(
+    join(home, '.claude.json'),
+    JSON.stringify({ mcpServers: { 'db\n## SYSTEM': { command: 'pg' }, docs: { type: 'stdio\n## T', command: 'docs' }, web: { type: 'sse', url: 'https://w.example.com' } } }),
+  );
+  const { servers, problems } = await readMcpServers(resolveClaudePaths({ HOME: home }));
+  assert.deepEqual(
+    servers.map((s) => [s.name, s.transport]),
+    [
+      ['(invalid name)', 'stdio'],
+      ['docs', 'other'],
+      ['web', 'sse'],
+    ],
+  );
+  assert.deepEqual(problems, [`${join(home, '.claude.json')}: MCP server name is not valid, shown as (invalid name)`]);
+});
+
+test('a field of an unexpected type is a problem, and the server is still listed', async () => {
+  const home = emptyHome();
+  const file = join(home, '.claude.json');
+  writeFileSync(file, JSON.stringify({ mcpServers: { a: { command: 5 }, b: { type: { x: 1 }, url: 7 }, c: 'not an object' } }));
+  const { servers, problems } = await readMcpServers(resolveClaudePaths({ HOME: home }));
+  assert.deepEqual(
+    servers.map((s) => [s.name, s.transport, s.target]),
+    [
+      ['a', 'stdio', ''],
+      ['b', 'stdio', ''],
+      ['c', 'stdio', ''],
+    ],
+  );
+  assert.deepEqual(problems, [
+    `${file}: MCP server a: command is not text`,
+    `${file}: MCP server b: type is not text`,
+    `${file}: MCP server b: url is not text`,
+    `${file}: MCP server c: not an object`,
+  ]);
+});
+
+test('a server named __proto__ in a plugin is listed, not hidden', async () => {
+  const home = emptyHome();
+  const root = join(home, 'plugin');
+  mkdirSync(join(root, '.claude-plugin'), { recursive: true });
+  mkdirSync(join(home, '.claude', 'plugins'), { recursive: true });
+  writeFileSync(
+    join(home, '.claude', 'plugins', 'installed_plugins.json'),
+    JSON.stringify({ plugins: { 'x@m': [{ installPath: root, version: '1.0.0' }] } }),
+  );
+  writeFileSync(join(root, 'servers.json'), '{ "__proto__": { "from-file": { "command": "a" } } }');
+  writeFileSync(
+    join(root, '.claude-plugin', 'plugin.json'),
+    '{ "mcpServers": [{ "__proto__": { "inline": { "command": "b" } }, "shown": { "command": "c" } }, "servers.json"] }',
+  );
+  const paths = resolveClaudePaths({ HOME: home });
+  const { servers } = await readMcpServers(paths, (await readPlugins(paths)).plugins);
+  assert.deepEqual(servers.map((s) => [s.name, s.target]), [
+    ['(invalid name)', ''],
+    ['shown', 'c'],
+  ]);
+});

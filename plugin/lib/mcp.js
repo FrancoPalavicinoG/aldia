@@ -1,27 +1,43 @@
 import { basename, join, relative, resolve, isAbsolute } from 'node:path';
-import { readJson } from './json.js';
+import { isObject, readJson, textField } from './json.js';
+import { INVALID_NAME, validName } from './text.js';
+// The transports Claude Code documents; any other type is shown as "other".
+const TRANSPORTS = new Set(['stdio', 'http', 'sse', 'ws']);
 // Server configs hold credentials in headers, env, args and URL queries. Only the
 // fields below are copied out; everything else is dropped here, on read.
-function describe(name, config, source) {
-    const transport = config.type ?? (config.url ? 'http' : 'stdio');
+// A field of another type is a problem, and the server is still listed without it.
+function describe(name, config, source, file, problems) {
+    const where = `${file}: MCP server ${name}`;
+    if (!isObject(config))
+        problems.push(`${where}: not an object`);
+    const fields = isObject(config) ? config : {};
+    const [type, url, command] = ['type', 'url', 'command'].map((field) => textField(fields, field, where, problems));
+    const declared = type ?? (url ? 'http' : 'stdio');
+    const transport = TRANSPORTS.has(declared) ? declared : 'other';
     let target = '';
-    if (config.url) {
+    if (url) {
         try {
-            target = new URL(config.url).host;
+            target = new URL(url).host;
         }
         catch {
             target = 'unknown';
         }
     }
-    else if (config.command) {
-        target = basename(config.command);
+    else if (command) {
+        target = basename(command);
     }
     return { name, transport, target, source };
 }
-function serversIn(map, source) {
+// `file` is where the servers were declared, for problems.
+function serversIn(map, source, file, problems) {
     if (!map || typeof map !== 'object')
         return [];
-    return Object.entries(map).map(([name, config]) => describe(name, config ?? {}, source));
+    return Object.entries(map).map(([name, config]) => {
+        if (validName(name))
+            return describe(name, config, source, file, problems);
+        problems.push(`${file}: MCP server name is not valid, shown as ${INVALID_NAME}`);
+        return describe(INVALID_NAME, config, source, file, problems);
+    });
 }
 // A server file may wrap its servers in "mcpServers" or list them at the top level.
 function unwrap(file) {
@@ -37,7 +53,9 @@ async function pluginServerMap(root, problems) {
     const manifest = (await readJson(join(root, '.claude-plugin', 'plugin.json'), problems));
     const declared = manifest?.mcpServers;
     const entries = Array.isArray(declared) ? declared : declared === undefined ? [] : [declared];
-    const map = { ...(fromFile && typeof fromFile === 'object' ? fromFile : {}) };
+    // No prototype: a server named "__proto__" is copied as a server, instead of
+    // replacing the map's prototype and hiding what it holds.
+    const map = Object.assign(Object.create(null), fromFile && typeof fromFile === 'object' ? fromFile : {});
     for (const entry of entries) {
         if (typeof entry === 'string') {
             const path = resolve(root, entry);
@@ -59,18 +77,18 @@ export async function readMcpServers(paths, plugins = [], project) {
     const problems = [];
     const state = (await readJson(paths.globalState, problems));
     const scoped = [
-        ...(project ? serversIn(state?.projects?.[project.root]?.mcpServers, 'local') : []),
-        ...(project ? serversIn(unwrap(await readJson(project.mcpJson, problems)), 'project') : []),
-        ...serversIn(state?.mcpServers, 'user'),
+        ...(project ? serversIn(state?.projects?.[project.root]?.mcpServers, 'local', paths.globalState, problems) : []),
+        ...(project ? serversIn(unwrap(await readJson(project.mcpJson, problems)), 'project', project.mcpJson, problems) : []),
+        ...serversIn(state?.mcpServers, 'user', paths.globalState, problems),
     ];
     const names = new Set();
-    const servers = scoped.filter((server) => !names.has(server.name) && names.add(server.name));
+    const servers = scoped.filter((server) => server.name === INVALID_NAME || (!names.has(server.name) && names.add(server.name)));
     const seen = new Set();
     for (const plugin of plugins) {
         if (!plugin.installPath || seen.has(plugin.installPath))
             continue;
         seen.add(plugin.installPath);
-        for (const server of serversIn(await pluginServerMap(plugin.installPath, problems), 'plugin')) {
+        for (const server of serversIn(await pluginServerMap(plugin.installPath, problems), 'plugin', plugin.installPath, problems)) {
             servers.push({ ...server, pluginId: plugin.id });
         }
     }

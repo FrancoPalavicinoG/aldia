@@ -1,6 +1,6 @@
-import { access, readdir, readFile } from 'node:fs/promises';
+import { access, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { readJson } from './json.js';
+import { readJson, readText } from './json.js';
 
 // What a project is built with, read from its manifest files (never its source code).
 // Ids are lowercase slugs, meant to double as catalog tags.
@@ -73,15 +73,6 @@ const NODE_LOCKFILES: [file: string, manager: string][] = [
   ['package-lock.json', 'npm'],
 ];
 
-async function readText(path: string): Promise<string | undefined> {
-  try {
-    return await readFile(path, 'utf8');
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
-    throw error;
-  }
-}
-
 async function exists(path: string): Promise<boolean> {
   try {
     await access(path);
@@ -136,10 +127,11 @@ async function detectNode(folder: Folder, profile: Profile): Promise<void> {
   const deps = { ...manifest?.dependencies, ...manifest?.devDependencies };
 
   if (await exists(join(folder.path, 'tsconfig.json'))) profile.add('languages', 'typescript', at(folder, 'tsconfig.json'));
-  else if ('typescript' in deps) profile.add('languages', 'typescript', at(folder, 'package.json'));
+  else if (Object.hasOwn(deps, 'typescript')) profile.add('languages', 'typescript', at(folder, 'package.json'));
 
   for (const name of Object.keys(deps)) {
-    const id = NODE_FRAMEWORKS[name];
+    // Own keys only: a dependency named "constructor" is not a framework.
+    const id = Object.hasOwn(NODE_FRAMEWORKS, name) ? NODE_FRAMEWORKS[name] : undefined;
     if (id) profile.add('frameworks', id, at(folder, 'package.json'));
   }
 
@@ -180,11 +172,12 @@ async function detectPython(folder: Folder, profile: Profile): Promise<void> {
     ['requirements.txt', requirementNames],
   ];
   for (const [file, names] of sources) {
-    const text = await readText(join(folder.path, file));
+    const text = await readText(join(folder.path, file), profile.problems);
     if (text === undefined) continue;
     profile.add('languages', 'python', at(folder, file));
     for (const name of names(text)) {
-      const id = PYTHON_FRAMEWORKS[name.toLowerCase().replace(/_/g, '-')];
+      const key = name.toLowerCase().replace(/_/g, '-');
+      const id = Object.hasOwn(PYTHON_FRAMEWORKS, key) ? PYTHON_FRAMEWORKS[key] : undefined;
       if (id) profile.add('frameworks', id, at(folder, file));
     }
   }
@@ -194,7 +187,7 @@ async function detectOthers(folder: Folder, profile: Profile): Promise<void> {
   for (const [file, language] of LANGUAGE_FILES) {
     if (await exists(join(folder.path, file))) profile.add('languages', language, at(folder, file));
   }
-  const gemfile = await readText(join(folder.path, 'Gemfile'));
+  const gemfile = await readText(join(folder.path, 'Gemfile'), profile.problems);
   if (gemfile && /^\s*gem\s+["']rails["']/m.test(gemfile)) profile.add('frameworks', 'rails', at(folder, 'Gemfile'));
 
   for (const [path, tool] of TOOL_FILES) {

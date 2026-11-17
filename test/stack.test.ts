@@ -134,3 +134,27 @@ test('test fixtures are sample projects, not the repo stack', async () => {
   assert.deepEqual(stack.languages, []);
   assert.deepEqual(stack.frameworks, []);
 });
+
+test('a manifest that is a folder, or too big to read, is a problem and the scan goes on', async () => {
+  const dir = emptyDir();
+  mkdirSync(join(dir, 'package.json'));
+  mkdirSync(join(dir, 'pyproject.toml'));
+  writeAt(dir, 'requirements.txt', `django\n${'#'.repeat(1024 * 1024)}\n`);
+  writeAt(dir, 'go.mod', 'module x\n');
+  const stack = await detectStack(dir);
+  assert.deepEqual(stack.languages, ['go', 'javascript']);
+  assert.deepEqual(stack.frameworks, []);
+  assert.deepEqual(stack.problems, [
+    `${join(dir, 'package.json')}: not a file`,
+    `${join(dir, 'pyproject.toml')}: not a file`,
+    `${join(dir, 'requirements.txt')}: too big to read (over 1 MB)`,
+  ]);
+});
+
+test('a dependency named like a built-in of JavaScript objects is not a framework', async () => {
+  const dir = emptyDir();
+  writeAt(dir, 'package.json', '{ "dependencies": { "constructor": "1.0.0", "hasOwnProperty": "1.0.0" }, "devDependencies": { "__proto__": "1.0.0" } }');
+  writeAt(dir, 'requirements.txt', 'constructor\ntoString\n__proto__\n');
+  const stack = await detectStack(dir);
+  assert.deepEqual(stack.frameworks, []);
+});

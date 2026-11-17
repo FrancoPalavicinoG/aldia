@@ -1,6 +1,8 @@
-import { readdir, readFile } from 'node:fs/promises';
+import { readdir } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { parseFrontmatter } from './frontmatter.js';
+import { readText } from './json.js';
+import { INVALID_NAME, validName } from './text.js';
 import type { ClaudePaths, ProjectPaths } from './paths.js';
 import type { InstalledPlugin } from './plugins.js';
 
@@ -45,17 +47,16 @@ async function scanSkills(dir: string, source: SkillSource, problems: string[], 
   for (const folder of await subfolders(dir)) {
     if (skip.includes(basename(folder))) continue;
     const path = join(folder, 'SKILL.md');
-    let text: string;
-    try {
-      text = await readFile(path, 'utf8');
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
-      problems.push(`${path}: could not be read`);
-      continue;
-    }
+    const text = await readText(path, problems);
+    if (text === undefined) continue;
     const fields = parseFrontmatter(text) ?? {};
+    let name = fields.name ?? basename(folder);
+    if (!validName(name)) {
+      problems.push(`${path}: name is not valid, shown as ${INVALID_NAME}`);
+      name = INVALID_NAME;
+    }
     skills.push({
-      name: fields.name ?? basename(folder),
+      name,
       description: fields.description ?? firstContentLine(text),
       whenToUse: fields.when_to_use ?? '',
       modelInvocable: fields['disable-model-invocation'] !== 'true',

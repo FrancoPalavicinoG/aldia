@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { findProgram } from './programs.js';
+import { NAME } from './text.js';
 
 const run = promisify(execFile);
 
@@ -18,8 +19,6 @@ export type Operation =
   | { kind: 'remove-mcp'; server: string; scope: Scope };
 
 const SCOPES = new Set<string>(['user', 'local']);
-// Starts with a letter or digit, so it can never pass as an option ("-s", "--scope").
-const NAME = '[A-Za-z0-9][A-Za-z0-9._-]*';
 const PLUGIN_ID = new RegExp(`^${NAME}@${NAME}$`);
 const SERVER = new RegExp(`^${NAME}$`);
 
