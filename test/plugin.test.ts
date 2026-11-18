@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,6 +17,15 @@ test('the marketplace lists the plugin folder, whose manifest names aldia with a
   const manifest = readJsonFile(join(plugin, '.claude-plugin', 'plugin.json'));
   assert.equal(manifest.name, 'aldia');
   assert.match(manifest.version, /^\d+\.\d+\.\d+$/);
+});
+
+// Claude Code keeps users on the plugin.json version until it changes: the package and
+// its lockfile say the same, so there is one version to raise.
+test('the plugin, the package and its lockfile have one version', () => {
+  const manifest = readJsonFile(join(plugin, '.claude-plugin', 'plugin.json'));
+  const pkg = readJsonFile(join(repo, 'package.json'));
+  const lock = readJsonFile(join(repo, 'package-lock.json'));
+  assert.deepEqual([pkg.version, lock.version, lock.packages[''].version], [manifest.version, manifest.version, manifest.version]);
 });
 
 test('the skill is /aldia, runs only when the user asks, and every file it points to ships', () => {
@@ -35,6 +44,17 @@ test('the skill is /aldia, runs only when the user asks, and every file it point
   assert.match(text, /`\(end of aldia inventory\)`/);
   // /aldia clean runs a fixed command: the user's arguments never reach the shell.
   assert.match(text, /- Bash\(node "\$\{CLAUDE_PLUGIN_ROOT\}\/lib\/cli\.js" clean\)/);
+});
+
+// plugin/ is what users run. It holds the manifest, the skill and one compiled file per
+// source file, nothing else: a stray file would ship, and a bin/ folder, hooks or MCP
+// servers would add to what the plugin does. What git ignores (.DS_Store) is not shipped.
+test('the plugin ships only its manifest, its skill and the code compiled from src/', () => {
+  const listed = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z', '--', 'plugin'], { cwd: repo, encoding: 'utf8' });
+  const shipped = [...new Set(listed.split('\0').filter((path) => path && existsSync(join(repo, path))))].sort();
+  const compiled = readdirSync(join(repo, 'src')).filter((f) => f.endsWith('.ts')).map((f) => `plugin/lib/${f.replace(/\.ts$/, '.js')}`);
+  const expected = ['plugin/.claude-plugin/plugin.json', 'plugin/skills/aldia/SKILL.md', 'plugin/lib/package.json', ...compiled].sort();
+  assert.deepEqual(shipped, expected);
 });
 
 test('the plugin folder holds no package.json and lockfile, so Claude Code installs nothing', () => {
