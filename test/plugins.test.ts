@@ -22,6 +22,30 @@ test('lists installed plugins with their enabled state', async () => {
   );
 });
 
+// clean only proposes turning off what the user turned on: with no entry, the docs say a
+// plugin follows defaultEnabled, but the CLI lists it as off (checked with 2.1.327).
+test('each plugin says what the user and the repo set for it, and when it was installed', async () => {
+  const paths = resolveClaudePaths({ HOME: fixture('home-basic') });
+  const { plugins } = await readPlugins(paths, resolveProjectPaths(fixture('project-basic')));
+  assert.deepEqual(
+    plugins.map((p) => [p.id, p.userSetting, p.repoSetting, p.installedAt]),
+    [
+      ['code-review@official', true, false, '2026-10-01T10:00:00.000Z'],
+      ['design-kit@community', false, false, '2026-10-02T10:00:00.000Z'],
+    ],
+  );
+  const alone = await readPlugins(paths);
+  assert.deepEqual(alone.plugins.map((p) => [p.userSetting, p.repoSetting]), [[true, undefined], [false, undefined]]);
+});
+
+test('an install date that is not a date is left out', async () => {
+  const home = emptyHome();
+  mkdirSync(join(home, '.claude', 'plugins'), { recursive: true });
+  writeFileSync(join(home, '.claude', 'plugins', 'installed_plugins.json'), JSON.stringify({ plugins: { 'a@m': [{ installedAt: '0' }] } }));
+  const { plugins } = await readPlugins(resolveClaudePaths({ HOME: home }));
+  assert.deepEqual(plugins.map((p) => [p.id, p.installedAt, p.userSetting]), [['a@m', undefined, undefined]]);
+});
+
 test('a home without Claude Code config gives an empty inventory', async () => {
   const inventory = await readPlugins(resolveClaudePaths({ HOME: emptyHome() }));
   assert.deepEqual(inventory, { plugins: [], problems: [] });

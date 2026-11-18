@@ -30,3 +30,6 @@ export const INVALID_NAME = '(invalid name)';
 export const INVALID_VERSION = '(invalid version)';
 export const validName = (text) => PLAIN_NAME.test(text);
 export const validVersion = (text) => PLAIN_VERSION.test(text);
+// An ISO date as Claude Code writes it. Any other text would compare as older than every date.
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
+export const validDate = (text) => typeof text === 'string' && ISO_DATE.test(text);

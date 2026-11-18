@@ -1,6 +1,6 @@
 import { isObject, readJson, textField } from './json.js';
 import type { ClaudePaths, ProjectPaths } from './paths.js';
-import { INVALID_NAME, INVALID_VERSION, validName, validVersion } from './text.js';
+import { INVALID_NAME, INVALID_VERSION, validDate, validName, validVersion } from './text.js';
 
 export interface InstalledPlugin {
   id: string;
@@ -8,8 +8,15 @@ export interface InstalledPlugin {
   marketplace: string;
   version: string;
   scope: string;
+  // In effect: in the project when there is one.
   enabled: boolean;
+  // What ~/.claude/settings.json says; undefined when it has no entry.
+  userSetting?: boolean;
+  // What the project's settings say (local over shared); undefined when they have no entry.
+  repoSetting?: boolean;
   installPath: string;
+  // ISO, when valid.
+  installedAt?: string;
 }
 
 export interface PluginInventory {
@@ -34,14 +41,17 @@ export async function readPlugins(paths: ClaudePaths, project?: ProjectPaths): P
   const problems: string[] = [];
   const file = paths.installedPlugins;
   const installed = await readJson(file, problems);
-  const layers = project ? [paths.settings, project.settings, project.localSettings] : [paths.settings];
-  // Only true and false count; any other value is not a setting.
-  const enabled: Record<string, boolean> = {};
-  for (const layer of layers) {
-    const settings = await readJson(layer, problems);
+  // Only true and false count; any other value is not a setting. Maps: an id like
+  // "__proto__" stays a plain key.
+  const readLayer = async (file: string, into: Map<string, boolean>) => {
+    const settings = await readJson(file, problems);
     const map = isObject(settings) && isObject(settings.enabledPlugins) ? settings.enabledPlugins : {};
-    for (const [id, on] of Object.entries(map)) if (typeof on === 'boolean') enabled[id] = on;
-  }
+    for (const [id, on] of Object.entries(map)) if (typeof on === 'boolean') into.set(id, on);
+  };
+  const user = new Map<string, boolean>();
+  const repo = new Map<string, boolean>();
+  await readLayer(paths.settings, user);
+  if (project) for (const file of [project.settings, project.localSettings]) await readLayer(file, repo);
 
   const plugins: InstalledPlugin[] = [];
   const all = isObject(installed) ? installed.plugins : undefined;
@@ -65,13 +75,18 @@ export async function readPlugins(paths: ClaudePaths, project?: ProjectPaths): P
         problems.push(`${where}: version is not valid`);
         version = INVALID_VERSION;
       }
+      const userSetting = valid ? user.get(id) : undefined;
+      const repoSetting = valid ? repo.get(id) : undefined;
       plugins.push({
         id,
         ...(valid ? splitId(id) : { name: INVALID_NAME, marketplace: INVALID_NAME }),
         version,
         scope: textField(record, 'scope', where, problems) ?? 'user',
-        enabled: valid && enabled[id] === true,
+        enabled: (repoSetting ?? userSetting) === true,
+        ...(userSetting !== undefined ? { userSetting } : {}),
+        ...(repoSetting !== undefined ? { repoSetting } : {}),
         installPath: textField(record, 'installPath', where, problems) ?? '',
+        ...(validDate(record.installedAt) ? { installedAt: record.installedAt } : {}),
       });
     }
   }
