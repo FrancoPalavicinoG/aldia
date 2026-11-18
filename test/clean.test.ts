@@ -218,3 +218,66 @@ test('the plan skips any target that holds an invalid name', () => {
   const plan = cleanPlan(usageByItem(invalid), now);
   assert.ok(plan.proposals.every((p) => !p.target.includes('(invalid name)')), JSON.stringify(plan.proposals));
 });
+
+// The setup from the CLI check (2.1.327): plugins written as `claude plugin install` writes
+// them, and a history that covers 25 days with none of them used.
+function cliSetup(historyDays: number) {
+  const home = mkdtempSync(join(tmpdir(), 'aldia-home-'));
+  const cache = join(home, '.claude', 'plugins', 'cache', 't');
+  const records: Record<string, unknown[]> = {};
+  const enabledPlugins: Record<string, boolean> = {};
+  const add = (name: string, manifest: object, files: Record<string, string>, options: { on?: boolean; installed?: string; scope?: string } = {}) => {
+    const root = join(cache, name, '1.0.0');
+    mkdirSync(join(root, '.claude-plugin'), { recursive: true });
+    writeFileSync(join(root, '.claude-plugin', 'plugin.json'), JSON.stringify({ name, version: '1.0.0', ...manifest }));
+    for (const [path, text] of Object.entries(files)) {
+      mkdirSync(join(root, path, '..'), { recursive: true });
+      writeFileSync(join(root, path), text);
+    }
+    const installedAt = options.installed ?? '2026-09-01T00:00:00.000Z';
+    (records[`${name}@t`] ??= []).push({ scope: options.scope ?? 'user', installPath: root, version: '1.0.0', installedAt, lastUpdated: '2026-11-09T00:00:00.000Z' });
+    if (options.on !== undefined) enabledPlugins[`${name}@t`] = options.on;
+  };
+  const skillFile = (name: string) => ({ [`skills/${name}/SKILL.md`]: `---\nname: ${name}\ndescription: ${'d'.repeat(1400)}\n---\n` });
+  add('idle', {}, skillFile('idle-skill'), { on: true });
+  add('guard', {}, { ...skillFile('guard-skill'), 'hooks/hooks.json': '{"hooks":{}}' }, { on: true });
+  add('base', {}, skillFile('base-skill'), { on: true });
+  add('dependent', { dependencies: ['base'] }, { ...skillFile('dependent-skill'), 'agents/rev.md': '---\nname: rev\n---\n' }, { on: true });
+  add('fresh', {}, skillFile('fresh-skill'), { on: true, installed: '2026-11-08T00:00:00.000Z' });
+  add('unset', {}, skillFile('unset-skill'));
+  add('twice', {}, skillFile('twice-skill'), { on: true });
+  add('twice', {}, skillFile('twice-skill'), { scope: 'project' });
+  add('old', {}, skillFile('old-skill'), { on: false });
+  mkdirSync(join(home, '.claude', 'plugins'), { recursive: true });
+  writeFileSync(join(home, '.claude', 'plugins', 'installed_plugins.json'), JSON.stringify({ version: 2, plugins: records }));
+  writeFileSync(join(home, '.claude', 'settings.json'), JSON.stringify({ enabledPlugins }));
+  const sessions = join(home, '.claude', 'projects', '-repo');
+  mkdirSync(sessions, { recursive: true });
+  const start = new Date(now.getTime() - historyDays * 24 * 60 * 60 * 1000).toISOString();
+  const call = (when: string, name: string, input: object) => JSON.stringify({ type: 'assistant', timestamp: when, message: { content: [{ type: 'tool_use', name, input }] } });
+  // The dependent plugin is used through its agent, and so is base, which it needs.
+  writeFileSync(join(sessions, 's.jsonl'), [call(start, 'Bash', {}), call('2026-11-09T00:00:00.000Z', 'Agent', { subagent_type: 'dependent:rev' })].join('\n'));
+  return resolveClaudePaths({ HOME: home });
+}
+
+test('only a plugin aldia can measure, set on by the user and unused all along is proposed', async () => {
+  const report = await cleanReport(cliSetup(25), undefined, { now });
+  const turnOff = report.split('\n\n').find((block) => block.startsWith('Turn off'));
+  assert.deepEqual(turnOff?.match(/^\| [\w@-]+@t \|/gm), ['| idle@t |', '| twice@t |'], report);
+  // Each plugin left on says why; dependent is used, so it isn't listed.
+  assert.match(report, /guard@t \(has hooks\)/);
+  assert.match(report, /base@t \(needed by dependent@t\)/);
+  assert.match(report, /fresh@t \(installed 2 days ago\)/);
+  assert.match(report, /unset@t \(not set in ~\/\.claude\/settings\.json\)/);
+  assert.ok(!/dependent@t \(/.test(report), report);
+  // Removing is never proposed on 25 days of history: old stays.
+  assert.ok(!report.includes('old@t'), report);
+});
+
+test('with less than three weeks of history nothing is proposed', async () => {
+  const report = await cleanReport(cliSetup(10), undefined, { now });
+  assert.match(report, /^Not enough history to tell what is unused: 10 days \(needs 21\)\.$/m);
+  assert.ok(!/^Turn off/m.test(report), report);
+  const none = await cleanReport(resolveClaudePaths({ HOME: mkdtempSync(join(tmpdir(), 'aldia-home-')) }), undefined, { now });
+  assert.match(none, /^Not enough history to tell what is unused: 0 days \(needs 21\)\.$/m);
+});
