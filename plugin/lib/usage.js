@@ -2,8 +2,7 @@ import { createReadStream } from 'node:fs';
 import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
-// Only a real date counts: any other text would compare as older than every date.
-const DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
+import { validDate } from './text.js';
 // The command the user typed is recorded as <command-name>/name</command-name> in their
 // message, followed by its arguments, which are not read.
 const COMMAND = /<command-name>(\/[^<\s]{1,100})<\/command-name>/;
@@ -23,7 +22,7 @@ async function scanSession(path, since, counts) {
         catch {
             continue;
         }
-        const when = typeof entry.timestamp === 'string' && DATE.test(entry.timestamp) ? entry.timestamp : '';
+        const when = validDate(entry.timestamp) ? entry.timestamp : '';
         if (when && (!counts.oldest || when < counts.oldest))
             counts.oldest = when;
         if (when < since)

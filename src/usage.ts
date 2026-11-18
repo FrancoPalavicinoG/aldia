@@ -3,6 +3,7 @@ import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import type { ClaudePaths } from './paths.js';
+import { validDate } from './text.js';
 
 export interface UseCount {
   count: number;
@@ -42,8 +43,6 @@ interface Entry {
 
 type Counts = Record<'skills' | 'mcpServers' | 'commands' | 'agents', Map<string, UseCount>> & { oldest?: string };
 
-// Only a real date counts: any other text would compare as older than every date.
-const DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
 
 // The command the user typed is recorded as <command-name>/name</command-name> in their
 // message, followed by its arguments, which are not read.
@@ -63,7 +62,7 @@ async function scanSession(path: string, since: string, counts: Counts) {
     } catch {
       continue;
     }
-    const when = typeof entry.timestamp === 'string' && DATE.test(entry.timestamp) ? entry.timestamp : '';
+    const when = validDate(entry.timestamp) ? entry.timestamp : '';
     if (when && (!counts.oldest || when < counts.oldest)) counts.oldest = when;
     if (when < since) continue;
     const content = entry.message?.content;
