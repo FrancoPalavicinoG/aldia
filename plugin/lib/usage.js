@@ -2,6 +2,8 @@ import { createReadStream } from 'node:fs';
 import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
+// Only a real date counts: any other text would compare as older than every date.
+const DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
 // The command the user typed is recorded as <command-name>/name</command-name> in their
 // message, followed by its arguments, which are not read.
 const COMMAND = /<command-name>(\/[^<\s]{1,100})<\/command-name>/;
@@ -21,7 +23,9 @@ async function scanSession(path, since, counts) {
         catch {
             continue;
         }
-        const when = typeof entry.timestamp === 'string' ? entry.timestamp : '';
+        const when = typeof entry.timestamp === 'string' && DATE.test(entry.timestamp) ? entry.timestamp : '';
+        if (when && (!counts.oldest || when < counts.oldest))
+            counts.oldest = when;
         if (when < since)
             continue;
         const content = entry.message?.content;
@@ -37,6 +41,10 @@ async function scanSession(path, since, counts) {
                 continue;
             if (block.name === 'Skill' && typeof block.input?.skill === 'string')
                 count(counts.skills, block.input.skill, when);
+            // The tool was called Task before it was Agent.
+            if ((block.name === 'Agent' || block.name === 'Task') && typeof block.input?.subagent_type === 'string') {
+                count(counts.agents, block.input.subagent_type, when);
+            }
             const server = /^mcp__(.+?)__/.exec(block.name)?.[1];
             if (server)
                 count(counts.mcpServers, server, when);
@@ -64,15 +72,18 @@ export async function dirEntries(dir) {
 const DAY = 24 * 60 * 60 * 1000;
 export async function readUsage(paths, { now = new Date(), days = 30 } = {}) {
     const since = new Date(now.getTime() - days * DAY).toISOString();
-    const counts = { skills: new Map(), mcpServers: new Map(), commands: new Map() };
+    const counts = { skills: new Map(), mcpServers: new Map(), commands: new Map(), agents: new Map() };
+    let older = false;
     const problems = [];
     let sessions = 0;
     // A file last written before the window can't hold anything inside it: not opened.
     // Returns whether the file was scanned.
     const scan = async (path) => {
         try {
-            if ((await stat(path)).mtime.toISOString() < since)
+            if ((await stat(path)).mtime.toISOString() < since) {
+                older = true;
                 return false;
+            }
             await scanSession(path, since, counts);
             return true;
         }
@@ -106,6 +117,8 @@ export async function readUsage(paths, { now = new Date(), days = 30 } = {}) {
         skills: Object.fromEntries(counts.skills),
         mcpServers: Object.fromEntries(counts.mcpServers),
         commands: Object.fromEntries(counts.commands),
+        agents: Object.fromEntries(counts.agents),
+        ...(older ? { historyFrom: since } : counts.oldest ? { historyFrom: counts.oldest < since ? since : counts.oldest } : {}),
         problems,
     };
 }

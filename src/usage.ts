@@ -12,7 +12,8 @@ export interface UseCount {
 
 // What the user actually used in the last days, read from Claude Code's session
 // history. Names are as the history writes them: skills as "plugin:skill" or "skill",
-// MCP servers by the name in their tool names (mcp__<server>__<tool>), commands as typed.
+// MCP servers by the name in their tool names (mcp__<server>__<tool>), commands as typed,
+// agents as Claude called them ("plugin:agent" for a plugin's).
 export interface Usage {
   // Start of the window, ISO.
   since: string;
@@ -20,6 +21,11 @@ export interface Usage {
   skills: Record<string, UseCount>;
   mcpServers: Record<string, UseCount>;
   commands: Record<string, UseCount>;
+  agents: Record<string, UseCount>;
+  // How far back the history goes, ISO: the oldest entry read, or `since` when some session
+  // is older than the window. Undefined without history. Claude Code deletes sessions after
+  // cleanupPeriodDays (30 by default), and a new user has little.
+  historyFrom?: string;
   problems: string[];
 }
 
@@ -34,7 +40,10 @@ interface Entry {
   message?: { content?: unknown };
 }
 
-type Counts = Record<'skills' | 'mcpServers' | 'commands', Map<string, UseCount>>;
+type Counts = Record<'skills' | 'mcpServers' | 'commands' | 'agents', Map<string, UseCount>> & { oldest?: string };
+
+// Only a real date counts: any other text would compare as older than every date.
+const DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
 
 // The command the user typed is recorded as <command-name>/name</command-name> in their
 // message, followed by its arguments, which are not read.
@@ -54,7 +63,8 @@ async function scanSession(path: string, since: string, counts: Counts) {
     } catch {
       continue;
     }
-    const when = typeof entry.timestamp === 'string' ? entry.timestamp : '';
+    const when = typeof entry.timestamp === 'string' && DATE.test(entry.timestamp) ? entry.timestamp : '';
+    if (when && (!counts.oldest || when < counts.oldest)) counts.oldest = when;
     if (when < since) continue;
     const content = entry.message?.content;
     if (entry.type === 'user' && typeof content === 'string') {
@@ -62,9 +72,13 @@ async function scanSession(path: string, since: string, counts: Counts) {
       if (command) count(counts.commands, command, when);
     }
     if (!Array.isArray(content)) continue;
-    for (const block of content as { type?: unknown; name?: unknown; input?: { skill?: unknown } }[]) {
+    for (const block of content as { type?: unknown; name?: unknown; input?: { skill?: unknown; subagent_type?: unknown } }[]) {
       if (block?.type !== 'tool_use' || typeof block.name !== 'string') continue;
       if (block.name === 'Skill' && typeof block.input?.skill === 'string') count(counts.skills, block.input.skill, when);
+      // The tool was called Task before it was Agent.
+      if ((block.name === 'Agent' || block.name === 'Task') && typeof block.input?.subagent_type === 'string') {
+        count(counts.agents, block.input.subagent_type, when);
+      }
       const server = /^mcp__(.+?)__/.exec(block.name)?.[1];
       if (server) count(counts.mcpServers, server, when);
     }
@@ -92,7 +106,8 @@ const DAY = 24 * 60 * 60 * 1000;
 
 export async function readUsage(paths: ClaudePaths, { now = new Date(), days = 30 }: UsageOptions = {}): Promise<Usage> {
   const since = new Date(now.getTime() - days * DAY).toISOString();
-  const counts: Counts = { skills: new Map(), mcpServers: new Map(), commands: new Map() };
+  const counts: Counts = { skills: new Map(), mcpServers: new Map(), commands: new Map(), agents: new Map() };
+  let older = false;
   const problems: string[] = [];
   let sessions = 0;
 
@@ -100,7 +115,10 @@ export async function readUsage(paths: ClaudePaths, { now = new Date(), days = 3
   // Returns whether the file was scanned.
   const scan = async (path: string): Promise<boolean> => {
     try {
-      if ((await stat(path)).mtime.toISOString() < since) return false;
+      if ((await stat(path)).mtime.toISOString() < since) {
+        older = true;
+        return false;
+      }
       await scanSession(path, since, counts);
       return true;
     } catch {
@@ -131,6 +149,8 @@ export async function readUsage(paths: ClaudePaths, { now = new Date(), days = 3
     skills: Object.fromEntries(counts.skills),
     mcpServers: Object.fromEntries(counts.mcpServers),
     commands: Object.fromEntries(counts.commands),
+    agents: Object.fromEntries(counts.agents),
+    ...(older ? { historyFrom: since } : counts.oldest ? { historyFrom: counts.oldest < since ? since : counts.oldest } : {}),
     problems,
   };
 }

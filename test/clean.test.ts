@@ -49,6 +49,7 @@ const setup: SetupData = {
       claude_ai_Linear: used('2026-11-09T00:00:00.000Z'),
     },
     commands: { '/court': used('2026-11-02T00:00:00.000Z') },
+    agents: {},
     problems: [],
   },
   cost: {
